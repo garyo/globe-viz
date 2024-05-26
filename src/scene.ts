@@ -21,6 +21,9 @@ import {
   WebGLRenderer,
   ACESFilmicToneMapping,
   SRGBColorSpace,
+  ShaderMaterial,
+  Color,
+  LinearSRGBColorSpace,
 } from 'three'
 import { DragControls } from 'three/examples/jsm/controls/DragControls'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls'
@@ -48,7 +51,9 @@ let clock: Clock
 let stats: Stats
 let gui: GUI
 
-const animation = { enabled: true, play: true }
+const animation = { enabled: false, play: true, speed: Math.PI / 10.0 }
+const props = { landColor: new Color(0xaaaaaa)}
+
 
 init()
 animate()
@@ -113,10 +118,34 @@ function init() {
     // })
     const textureLoader = new TextureLoader();
     const texture = textureLoader.load('/texture.png');
-    texture.colorSpace = SRGBColorSpace
-    // texture.premultiplyAlpha = true
-    const sphereMaterial = new MeshBasicMaterial({ map: texture, transparent: true });
-    sphere = new Mesh(sphereGeometry, sphereMaterial)
+    texture.colorSpace = LinearSRGBColorSpace
+
+    // A material that blends the transparent texture with a fixed color
+    const textureMaterial = new ShaderMaterial({
+        uniforms: {
+            tex: { value: texture },
+            color: { value: props.landColor }
+        },
+        vertexShader: `
+            varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform sampler2D tex;
+            uniform vec3 color;
+            varying vec2 vUv;
+            void main() {
+                vec4 texColor = texture2D(tex, vUv);
+                gl_FragColor = mix(vec4(color, 1.0), texColor, texColor.a);
+            }
+        `,
+        transparent: true
+    });
+
+    sphere = new Mesh(sphereGeometry, textureMaterial)
     sphere.castShadow = true
     scene.add(sphere)
 
@@ -142,8 +171,10 @@ function init() {
   // ===== 🎥 CAMERA =====
   {
     camera = new PerspectiveCamera(50, canvas.clientWidth / canvas.clientHeight, 0.1, 100)
-    camera.position.set(2, 2, 2)
+    camera.position.set(2, 1, 2)
   }
+
+  const useDragControls = false
 
   // ===== 🕹️ CONTROLS =====
   {
@@ -153,36 +184,38 @@ function init() {
     cameraControls.autoRotate = false
     cameraControls.update()
 
-    dragControls = new DragControls([sphere], camera, renderer.domElement)
-    dragControls.addEventListener('hoveron', (event) => {
-      const mesh = event.object as Mesh
-      const material = mesh.material as MeshStandardMaterial
-      material.emissive.set('orange')
-    })
-    dragControls.addEventListener('hoveroff', (event) => {
-      const mesh = event.object as Mesh
-      const material = mesh.material as MeshStandardMaterial
-      material.emissive.set('black')
-    })
-    dragControls.addEventListener('dragstart', (event) => {
-      const mesh = event.object as Mesh
-      const material = mesh.material as MeshStandardMaterial
-      cameraControls.enabled = false
-      animation.play = false
-      material.emissive.set('black')
-      material.opacity = 0.7
-      material.needsUpdate = true
-    })
-    dragControls.addEventListener('dragend', (event) => {
-      cameraControls.enabled = true
-      animation.play = true
-      const mesh = event.object as Mesh
-      const material = mesh.material as MeshStandardMaterial
-      material.emissive.set('black')
-      material.opacity = 1
-      material.needsUpdate = true
-    })
-    dragControls.enabled = false
+    if (useDragControls) {
+      dragControls = new DragControls([sphere], camera, renderer.domElement)
+      dragControls.addEventListener('hoveron', (event) => {
+        const mesh = event.object as Mesh
+        const material = mesh.material as ShaderMaterial
+        // material.emissive.set('orange')
+      })
+      dragControls.addEventListener('hoveroff', (event) => {
+        const mesh = event.object as Mesh
+        const material = mesh.material as ShaderMaterial
+        // material.emissive.set('black')
+      })
+      dragControls.addEventListener('dragstart', (event) => {
+        const mesh = event.object as Mesh
+        const material = mesh.material as ShaderMaterial
+        cameraControls.enabled = false
+        animation.play = false
+        // material.emissive.set('black')
+        // material.opacity = 0.7
+        // material.needsUpdate = true
+      })
+      dragControls.addEventListener('dragend', (event) => {
+        cameraControls.enabled = true
+        animation.play = true
+        const mesh = event.object as Mesh
+        const material = mesh.material as ShaderMaterial
+        // material.emissive.set('black')
+        // material.opacity = 1
+        // material.needsUpdate = true
+      })
+      dragControls.enabled = false
+    }
 
     // Full screen
     window.addEventListener('dblclick', (event) => {
@@ -214,60 +247,75 @@ function init() {
     document.body.appendChild(stats.dom)
   }
 
-  // ==== 🐞 DEBUG GUI ====
+  let showDebugUI = true
+
+  // ==== MAIN GUI ====
   {
-    gui = new GUI({ title: '🐞 Debug GUI', width: 300 })
+    gui = new GUI({ title: 'Options', width: 300 })
+    const saveName = 'mainUiState'
+    const animateGlobe = false  // if false, animate using camera
+    if (animateGlobe) {
+      gui.add(animation, 'enabled').name('Auto Rotate')
+      gui.add(animation, 'speed', 0, Math.PI / 4, Math.PI / 400).name('Auto Rotate Speed')
+    } else {
+      gui.add(cameraControls, 'autoRotate').name('Auto Rotate')
+      gui.add(cameraControls, 'autoRotateSpeed', 0, 5, 0.1).name('Auto Rotate Speed')
 
-    const cubeOneFolder = gui.addFolder('Cube one')
-
-    // cubeOneFolder.add(sphere.position, 'x').min(-5).max(5).step(0.5).name('pos x')
-    // cubeOneFolder.add(sphere.position, 'y').min(-5).max(5).step(0.5).name('pos y')
-    // cubeOneFolder.add(sphere.position, 'z').min(-5).max(5).step(0.5).name('pos z')
-
-    cubeOneFolder
-      .add(sphere.rotation, 'x', -Math.PI * 2, Math.PI * 2, Math.PI / 4)
-      .name('rotate x')
-    cubeOneFolder
-      .add(sphere.rotation, 'y', -Math.PI * 2, Math.PI * 2, Math.PI / 4)
-      .name('rotate y')
-    cubeOneFolder
-      .add(sphere.rotation, 'z', -Math.PI * 2, Math.PI * 2, Math.PI / 4)
-      .name('rotate z')
-
-    cubeOneFolder.add(animation, 'enabled').name('animated')
-
-    const controlsFolder = gui.addFolder('Controls')
-    controlsFolder.add(dragControls, 'enabled').name('drag controls')
-
-    const lightsFolder = gui.addFolder('Lights')
-    lightsFolder.add(pointLight, 'visible').name('point light')
-    lightsFolder.add(ambientLight, 'visible').name('ambient light')
-
-    const helpersFolder = gui.addFolder('Helpers')
-    helpersFolder.add(axesHelper, 'visible').name('axes')
-    helpersFolder.add(pointLightHelper, 'visible').name('pointLight')
-
-    const cameraFolder = gui.addFolder('Camera')
-    cameraFolder.add(cameraControls, 'autoRotate')
+    }
+    gui.addColor(props, 'landColor').name('Land Color')
 
     // persist GUI state in local storage on changes
     gui.onFinishChange(() => {
       const guiState = gui.save()
-      localStorage.setItem('guiState', JSON.stringify(guiState))
+      localStorage.setItem(saveName, JSON.stringify(guiState))
     })
 
     // load GUI state if available in local storage
-    const guiState = localStorage.getItem('guiState')
+    const guiState = localStorage.getItem(saveName)
     if (guiState) gui.load(JSON.parse(guiState))
 
+
+    // ==== 🐞 DEBUG GUI ====
+    {
+      const debugUI = gui.addFolder('🐞 Details/Debug')
+
+      const cubeOneFolder = debugUI.addFolder('Globe')
+
+      // cubeOneFolder.add(sphere.position, 'x').min(-5).max(5).step(0.5).name('pos x')
+      // cubeOneFolder.add(sphere.position, 'y').min(-5).max(5).step(0.5).name('pos y')
+      // cubeOneFolder.add(sphere.position, 'z').min(-5).max(5).step(0.5).name('pos z')
+
+      cubeOneFolder
+        .add(sphere.rotation, 'x', -Math.PI * 2, Math.PI * 2, Math.PI / 40)
+        .name('rotate x')
+      cubeOneFolder
+        .add(sphere.rotation, 'y', -Math.PI * 2, Math.PI * 2, Math.PI / 40)
+        .name('rotate y')
+      cubeOneFolder
+        .add(sphere.rotation, 'z', -Math.PI * 2, Math.PI * 2, Math.PI / 40)
+        .name('rotate z')
+
+      if (useDragControls) {
+        const controlsFolder = debugUI.addFolder('Controls')
+        controlsFolder.add(dragControls, 'enabled').name('drag controls')
+      }
+
+      // const lightsFolder = debugUI.addFolder('Lights')
+      // lightsFolder.add(pointLight, 'visible').name('point light')
+      // lightsFolder.add(ambientLight, 'visible').name('ambient light')
+
+      const helpersFolder = debugUI.addFolder('Helpers')
+      helpersFolder.add(axesHelper, 'visible').name('axes')
+      // helpersFolder.add(pointLightHelper, 'visible').name('pointLight')
+
+      debugUI.close()
+    }
     // reset GUI state button
     const resetGui = () => {
-      localStorage.removeItem('guiState')
+      localStorage.removeItem(saveName)
       gui.reset()
     }
     gui.add({ resetGui }, 'resetGui').name('RESET')
-
-    gui.close()
   }
 }
 
@@ -277,7 +325,7 @@ function animate() {
   stats.update()
 
   if (animation.enabled && animation.play) {
-    animations.rotate(sphere, clock, Math.PI / 3)
+    animations.rotate(sphere, clock, animation.speed)
   }
 
   if (resizeRendererToDisplaySize(renderer)) {
