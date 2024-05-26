@@ -9,14 +9,13 @@ import {
   LoadingManager,
   Mesh,
   MeshLambertMaterial,
-  MeshStandardMaterial,
-  MeshBasicMaterial,
   PCFSoftShadowMap,
   PerspectiveCamera,
   PlaneGeometry,
   PointLight,
-  PointLightHelper,
   Scene,
+  Material,
+  Texture,
   TextureLoader,
   WebGLRenderer,
   ACESFilmicToneMapping,
@@ -25,7 +24,6 @@ import {
   Color,
   LinearSRGBColorSpace,
 } from 'three'
-import { DragControls } from 'three/examples/jsm/controls/DragControls'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls'
 import Stats from 'three/examples/jsm/libs/stats.module'
 import * as animations from './helpers/animations'
@@ -42,25 +40,50 @@ let loadingManager: LoadingManager
 let ambientLight: AmbientLight
 let pointLight: PointLight
 let sphere: Mesh
+let texture: Texture
+let textureLoader: TextureLoader
 let camera: PerspectiveCamera
 let cameraControls: OrbitControls
-let dragControls: DragControls
 let axesHelper: AxesHelper
-let pointLightHelper: PointLightHelper
 let clock: Clock
 let stats: Stats
 let gui: GUI
 
 const animation = { enabled: false, play: true, speed: Math.PI / 10.0 }
 const props = { landColor: new Color(0xaaaaaa),
-                textureUrl: '/texture.png',
+                dataset: 'Temp Anomaly', // Temperature or Temp Anomaly
+                daysAgo: 0,
                 showStats: false}
 
 
-init()
+await init()
 animate()
 
-function init() {
+async function loadTexture(datasetName: String) {
+  let textureUrl: string
+  switch (datasetName) {
+    case 'Temp Anomaly':
+      textureUrl = '/sst-temp-anomaly.png'
+      break;
+    case 'Temperature':
+    default:
+      textureUrl = '/sst-temp.png'
+      break;
+  }
+  texture = await textureLoader.loadAsync(textureUrl);
+  if (!texture.source.data)
+    console.error(`Unable to load texture from ${textureUrl}`)
+  texture.needsUpdate = true
+
+  if (sphere) {
+    const m = sphere.material as ShaderMaterial
+    m.uniforms.tex.value = texture // set it into the shader's uniform; doesn't get picked up automatically
+  } else {
+    console.log(`Not updating sphere material, sphere=${sphere}`)
+  }
+}
+
+async function init() {
   // ===== 🖼️ CANVAS, RENDERER, & SCENE =====
   {
     ColorManagement.enabled = true
@@ -116,8 +139,8 @@ function init() {
 
     const radius = 1
     const sphereGeometry = new SphereGeometry(radius, 101, 101)
-    const textureLoader = new TextureLoader();
-    const texture = textureLoader.load(props.textureUrl);
+    textureLoader = new TextureLoader();
+    await loadTexture(props.dataset)
     texture.colorSpace = LinearSRGBColorSpace
 
     // A material that blends the transparent texture with a fixed color
@@ -228,6 +251,12 @@ function init() {
 
     const saveName = 'mainUiState'
     const animateGlobe = false  // if false, animate using camera
+
+    gui.add(props, 'dataset', ['Temperature', 'Temp Anomaly'])
+      .name('Dataset')
+      .onChange(async (val: String) => {
+        await loadTexture(val)
+      })
     if (animateGlobe) {
       gui.add(animation, 'enabled').name('Auto Rotate')
       gui.add(animation, 'speed', 0, Math.PI / 4, Math.PI / 400).name('Auto Rotate Speed')
