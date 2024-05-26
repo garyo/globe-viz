@@ -53,7 +53,8 @@ let gui: GUI
 
 const animation = { enabled: false, play: true, speed: Math.PI / 10.0 }
 const props = { landColor: new Color(0xaaaaaa),
-                textureUrl: '/texture.png'}
+                textureUrl: '/texture.png',
+                showStats: false}
 
 
 init()
@@ -209,11 +210,14 @@ function init() {
     clock = new Clock()
     stats = new Stats()
     // default positioning is fixed, top=0, left=0
+    stats.dom.id = 'stats'
     stats.dom.style.position = 'absolute'
     stats.dom.style.top = '1px';
     stats.dom.style.left = '1px';
     const top = document.getElementById('scene-wrapper')
     top!.appendChild(stats.dom)
+    if (!props.showStats)
+      stats.dom.hidden = true
   }
 
   // ==== MAIN GUI ====
@@ -249,6 +253,11 @@ function init() {
     {
       const debugUI = gui.addFolder('🐞 Details/Debug')
 
+      debugUI.add(props, 'showStats')
+        .name("Show FPS Stats")
+        .onChange(val => {
+          stats.dom.hidden = !val;
+        })
       const cubeOneFolder = debugUI.addFolder('Globe')
 
       // cubeOneFolder.add(sphere.position, 'x').min(-5).max(5).step(0.5).name('pos x')
