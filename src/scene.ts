@@ -238,17 +238,6 @@ function init() {
     }
     gui.addColor(props, 'landColor').name('Land Color')
 
-    // persist GUI state in local storage on changes
-    gui.onFinishChange(() => {
-      const guiState = gui.save()
-      localStorage.setItem(saveName, JSON.stringify(guiState))
-    })
-
-    // load GUI state if available in local storage
-    const guiState = localStorage.getItem(saveName)
-    if (guiState) gui.load(JSON.parse(guiState))
-
-
     // ==== 🐞 DEBUG GUI ====
     {
       const debugUI = gui.addFolder('🐞 Details/Debug')
@@ -284,12 +273,24 @@ function init() {
 
       debugUI.close()
     }
+
     // reset GUI state button
     const resetGui = () => {
       localStorage.removeItem(saveName)
       gui.reset()
     }
     gui.add({ resetGui }, 'resetGui').name('RESET')
+
+    // persist GUI state in local storage on changes
+    gui.onFinishChange(() => {
+      const guiState = gui.save()
+      localStorage.setItem(saveName, JSON.stringify(guiState))
+    })
+
+    // load GUI state if available in local storage
+    const guiState = localStorage.getItem(saveName)
+    if (guiState) gui.load(JSON.parse(guiState))
+
   }
 }
 
