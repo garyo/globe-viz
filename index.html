@@ -2,12 +2,17 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/threejs-icon.svg" />
+    <!-- <link rel="icon" type="image/svg+xml" href="/threejs-icon.svg" /> -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Three.js + TypeScript + Vite</title>
+    <title>Sea Surface Temperature</title>
   </head>
   <body>
-    <canvas id="scene"></canvas>
+    <div id="content" class="wrapper">
+      <div class="topbar">Menu Goes Here...</div>
+      <div id="scene-wrapper">
+        <canvas id="scene"></canvas>
+      </div>
+    </div>
     <script type="module" src="/src/scene.ts"></script>
   </body>
 </html>

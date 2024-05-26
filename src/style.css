@@ -5,7 +5,7 @@
   font-weight: 400;
 
   color-scheme: dark;
-  color: rgba(255, 255, 255, 0.87);
+  color: rgba(255, 255, 255, 1);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -16,8 +16,6 @@
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
 }
 
 body,
@@ -25,19 +23,36 @@ html {
   height: 100%;
 }
 
-canvas {
+.wrapper {
   height: 100%;
+  width: 100%;
+  display: grid;
+}
+
+.topbar {
+  height: 20px;
+  outline: 1px solid lightblue;
+}
+
+#scene-wrapper {
+  position: relative;
+}
+
+#scene {
   width: 100%;
   outline: none;
 
-  background: rgb(34, 193, 195);
+  background: rgb(100, 100, 100);
   background: linear-gradient(
     0deg,
-    rgb(8, 163, 166) 0%,
-    rgba(79, 166, 167, 0.849) 8%,
-    rgba(61, 79, 94, 0.885) 40%,
-    rgb(17, 19, 23)
+      rgb(255, 255, 255) 0%, rgb(100, 100, 100) 100%
   );
+}
+
+#gui {
+    position: absolute;
+    top: 0;
+    right: 0;
 }
 
 h1 {

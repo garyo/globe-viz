@@ -52,7 +52,8 @@ let stats: Stats
 let gui: GUI
 
 const animation = { enabled: false, play: true, speed: Math.PI / 10.0 }
-const props = { landColor: new Color(0xaaaaaa)}
+const props = { landColor: new Color(0xaaaaaa),
+                textureUrl: '/texture.png'}
 
 
 init()
@@ -67,7 +68,6 @@ function init() {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = PCFSoftShadowMap
-    // renderer.outputEncoding = sRGBEncoding
     renderer.toneMapping = ACESFilmicToneMapping
     scene = new Scene()
   }
@@ -94,30 +94,29 @@ function init() {
   // ===== 💡 LIGHTS =====
   {
     ambientLight = new AmbientLight('white', 0.4)
-    pointLight = new PointLight('white', 20, 100)
-    pointLight.position.set(-2, 2, 2)
-    pointLight.castShadow = true
-    pointLight.shadow.radius = 4
-    pointLight.shadow.camera.near = 0.5
-    pointLight.shadow.camera.far = 4000
-    pointLight.shadow.mapSize.width = 2048
-    pointLight.shadow.mapSize.height = 2048
     scene.add(ambientLight)
-    scene.add(pointLight)
+
+    const usePointLight = false
+    if (usePointLight) {
+      pointLight = new PointLight('white', 20, 100)
+      pointLight.position.set(-2, 2, 2)
+      pointLight.castShadow = true
+      pointLight.shadow.radius = 4
+      pointLight.shadow.camera.near = 0.5
+      pointLight.shadow.camera.far = 4000
+      pointLight.shadow.mapSize.width = 2048
+      pointLight.shadow.mapSize.height = 2048
+      scene.add(pointLight)
+    }
   }
 
   // ===== 📦 OBJECTS =====
   {
 
-    const sideLength = 1
-    const sphereGeometry = new SphereGeometry(sideLength, 101, 101)
-    // const cubeMaterial = new MeshStandardMaterial({
-    //   color: '#f69f1f',
-    //   metalness: 0.5,
-    //   roughness: 0.7,
-    // })
+    const radius = 1
+    const sphereGeometry = new SphereGeometry(radius, 101, 101)
     const textureLoader = new TextureLoader();
-    const texture = textureLoader.load('/texture.png');
+    const texture = textureLoader.load(props.textureUrl);
     texture.colorSpace = LinearSRGBColorSpace
 
     // A material that blends the transparent texture with a fixed color
@@ -174,8 +173,6 @@ function init() {
     camera.position.set(2, 1, 2)
   }
 
-  const useDragControls = false
-
   // ===== 🕹️ CONTROLS =====
   {
     cameraControls = new OrbitControls(camera, canvas)
@@ -183,39 +180,6 @@ function init() {
     cameraControls.enableDamping = true
     cameraControls.autoRotate = false
     cameraControls.update()
-
-    if (useDragControls) {
-      dragControls = new DragControls([sphere], camera, renderer.domElement)
-      dragControls.addEventListener('hoveron', (event) => {
-        const mesh = event.object as Mesh
-        const material = mesh.material as ShaderMaterial
-        // material.emissive.set('orange')
-      })
-      dragControls.addEventListener('hoveroff', (event) => {
-        const mesh = event.object as Mesh
-        const material = mesh.material as ShaderMaterial
-        // material.emissive.set('black')
-      })
-      dragControls.addEventListener('dragstart', (event) => {
-        const mesh = event.object as Mesh
-        const material = mesh.material as ShaderMaterial
-        cameraControls.enabled = false
-        animation.play = false
-        // material.emissive.set('black')
-        // material.opacity = 0.7
-        // material.needsUpdate = true
-      })
-      dragControls.addEventListener('dragend', (event) => {
-        cameraControls.enabled = true
-        animation.play = true
-        const mesh = event.object as Mesh
-        const material = mesh.material as ShaderMaterial
-        // material.emissive.set('black')
-        // material.opacity = 1
-        // material.needsUpdate = true
-      })
-      dragControls.enabled = false
-    }
 
     // Full screen
     window.addEventListener('dblclick', (event) => {
@@ -231,9 +195,9 @@ function init() {
     axesHelper.visible = false
     scene.add(axesHelper)
 
-    pointLightHelper = new PointLightHelper(pointLight, undefined, 'orange')
-    pointLightHelper.visible = false
-    scene.add(pointLightHelper)
+    // pointLightHelper = new PointLightHelper(pointLight, undefined, 'orange')
+    // pointLightHelper.visible = false
+    // scene.add(pointLightHelper)
 
     const gridHelper = new GridHelper(20, 20, 'teal', 'darkgray')
     gridHelper.position.y = -0.01
@@ -244,14 +208,20 @@ function init() {
   {
     clock = new Clock()
     stats = new Stats()
-    document.body.appendChild(stats.dom)
+    // default positioning is fixed, top=0, left=0
+    stats.dom.style.position = 'absolute'
+    stats.dom.style.top = '1px';
+    stats.dom.style.left = '1px';
+    const top = document.getElementById('scene-wrapper')
+    top!.appendChild(stats.dom)
   }
-
-  let showDebugUI = true
 
   // ==== MAIN GUI ====
   {
-    gui = new GUI({ title: 'Options', width: 300 })
+    const top = document.getElementById('scene-wrapper')
+    gui = new GUI({ title: 'Options', width: 300, container: top! })
+    gui.domElement.id = 'gui'
+
     const saveName = 'mainUiState'
     const animateGlobe = false  // if false, animate using camera
     if (animateGlobe) {
@@ -294,11 +264,6 @@ function init() {
       cubeOneFolder
         .add(sphere.rotation, 'z', -Math.PI * 2, Math.PI * 2, Math.PI / 40)
         .name('rotate z')
-
-      if (useDragControls) {
-        const controlsFolder = debugUI.addFolder('Controls')
-        controlsFolder.add(dragControls, 'enabled').name('drag controls')
-      }
 
       // const lightsFolder = debugUI.addFolder('Lights')
       // lightsFolder.add(pointLight, 'visible').name('point light')
