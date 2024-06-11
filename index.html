@@ -8,11 +8,20 @@
   </head>
   <body>
     <div id="content" class="wrapper">
-      <div class="topbar">Top Bar Goes Here...</div>
+      <div class="topbar">
+        <div>
+          <div>Global Sea Surface Temperature</div>
+          <div id="topdate">Loading...</div>
+          <div><a href="https://github.com/garyo/sea-surface-temp-viz" target="_blank">More Info</a></div>
+        </div>
+        <svg id="colormap"></svg>
+      </div>
       <div id="scene-wrapper">
         <canvas id="scene"></canvas>
       </div>
     </div>
     <script type="module" src="/src/scene.ts"></script>
   </body>
+  <!-- Loading spinner -->
+  <div class="loading">Loading&#8230;</div>
 </html>

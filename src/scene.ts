@@ -14,16 +14,17 @@ import {
   PlaneGeometry,
   PointLight,
   Scene,
-  Material,
   Texture,
   TextureLoader,
   WebGLRenderer,
   ACESFilmicToneMapping,
-  SRGBColorSpace,
   ShaderMaterial,
   Color,
   LinearSRGBColorSpace,
+  RepeatWrapping,
 } from 'three'
+import * as d3 from 'd3'
+import { legendColor } from 'd3-svg-legend'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls'
 import Stats from 'three/examples/jsm/libs/stats.module'
 import * as animations from './helpers/animations'
@@ -41,6 +42,7 @@ let ambientLight: AmbientLight
 let pointLight: PointLight
 let sphere: Mesh
 let texture: Texture
+let earthTexture: Texture
 let textureLoader: TextureLoader
 let camera: PerspectiveCamera
 let cameraControls: OrbitControls
@@ -50,37 +52,147 @@ let stats: Stats
 let gui: GUI
 
 const animation = { enabled: false, play: true, speed: Math.PI / 10.0 }
-const props = { landColor: new Color(0xaaaaaa),
-                dataset: 'Temp Anomaly', // Temperature or Temp Anomaly
-                daysAgo: 0,
-                showStats: false}
+const props = {
+  landColor: new Color(0xaaaaaa),
+  dataset: 'Temp Anomaly', // Temperature or Temp Anomaly
+  daysAgo: 0,
+  showStats: false,
+}
 
 
+
+let assets: {sstTexture: Blob|null, sstMetadata: {[Key: string]: any},
+  sstAnomalyTexture: Blob|null, sstAnomalyMetadata: {[Key: string]: any}} = {
+    sstTexture: null, sstMetadata: {}, sstAnomalyTexture: null, sstAnomalyMetadata: {}}
+
+assets = await getAssets()
 await init()
 animate()
 
+// Assets live in an Amazon S3 bucket, readable by everyone, sent with CORS headers
+// TODO: should run this once, save results and pass to other code
+async function getAssets() {
+  if (!assets.sstTexture) {
+    const bucketUrl = 'https://climate-change-assets.s3.amazonaws.com/sea-surface-temp/'
+    let sstTextureUrl = bucketUrl + 'sst-temp-equirect.png'
+    let sstMetadataUrl = bucketUrl + 'sst-temp-equirect-metadata.json'
+    let sstAnomalyTextureUrl = bucketUrl + 'sst-temp-anomaly-equirect.png'
+    let sstAnomalyMetadataUrl = bucketUrl + 'sst-temp-anomaly-equirect-metadata.json'
+
+    console.log('Loading all assets...')
+    let [sstTextureResult, sstMetadataResult,
+      sstAnomalyTextureResult, sstAnomalyMetadataResult] =
+        await Promise.all([fetch(sstTextureUrl),
+          fetch(sstMetadataUrl),
+          fetch(sstAnomalyTextureUrl),
+          fetch(sstAnomalyMetadataUrl)]);
+    console.log('Assets loaded. Unpacking...')
+    assets = {
+      sstTexture: await sstTextureResult.blob(),
+      sstMetadata: await sstMetadataResult.json(),
+      sstAnomalyTexture: await sstAnomalyTextureResult.blob(),
+      sstAnomalyMetadata: await sstAnomalyMetadataResult.json(),
+    }
+    console.log('Assets loaded and unpacked.', assets)
+  }
+  return assets
+}
+
 async function loadTexture(datasetName: String) {
   let textureUrl: string
-  switch (datasetName) {
-    case 'Temp Anomaly':
-      textureUrl = '/sst-temp-anomaly.png'
-      break;
-    case 'Temperature':
-    default:
-      textureUrl = '/sst-temp.png'
-      break;
+
+  const data = await getAssets()
+  if (datasetName == 'Temperature')
+    textureUrl = URL.createObjectURL(data.sstTexture as Blob)
+  else if (datasetName == 'Temp Anomaly')
+    textureUrl = URL.createObjectURL(data.sstAnomalyTexture as Blob)
+  else
+    textureUrl = `no-url-for-dataset-${datasetName}`
+
+  // Try to load the texture from the texture URL (Blob), or re-use cached one if available
+  try {
+    texture = await textureLoader.loadAsync(textureUrl)
+    texture.needsUpdate = true
+    saveTextureToLocalStorage(texture)
+  } catch (err) {
+    try {
+      console.warn(`Unable to load temperature map: ${err}. Reusing cached map.`)
+      texture = await getLastTextureFromLocalStorage()
+    }
+    catch (err) {
+      console.error(`Unable to load texture: ${err}`)
+    }
   }
-  texture = await textureLoader.loadAsync(textureUrl);
-  if (!texture.source.data)
-    console.error(`Unable to load texture from ${textureUrl}`)
-  texture.needsUpdate = true
+
+  earthTexture = await textureLoader.loadAsync('/8k_earth_daymap.jpg')
+    .catch((error) => {
+      console.error(`Failed to load earth map texture: ${error}`)
+      return new Texture()
+    })
+  earthTexture.wrapS = RepeatWrapping
+  earthTexture.wrapT = RepeatWrapping
 
   if (sphere) {
     const m = sphere.material as ShaderMaterial
     m.uniforms.tex.value = texture // set it into the shader's uniform; doesn't get picked up automatically
+    m.uniforms.earthTex.value = earthTexture
   } else {
     console.log(`Not updating sphere material, sphere=${sphere}`)
   }
+}
+
+async function setupColormap(datasetName: String) {
+  const data = await getAssets()
+  let domains, ranges, cells, title, format
+  console.log(`Setting up colormap for ${datasetName} dataset`)
+  if (datasetName == 'Temperature') {
+    domains = data.sstMetadata.cmap.map(x=>x[0]);
+    ranges = data.sstMetadata.cmap.map(x=>x[1]);
+    cells = [0, 10, 20, 22, 23, 24, 25, 30, 32, 33, 35]
+    title = 'Temperature, °C'
+    format = '.0f'
+  }
+  else {
+    domains = data.sstAnomalyMetadata.cmap.map(x=>x[0]);
+    ranges = data.sstAnomalyMetadata.cmap.map(x=>x[1]);
+    cells = domains
+    title = 'Temperature Anomaly, °C'
+    format = '.1f'
+  }
+  var linear = d3.scaleLinear()
+    .domain(domains)
+    .range(ranges);
+
+  var svg = d3.select("#colormap");
+  svg.empty()               // remove old content
+
+  svg.append("g")
+    .attr("class", "legendLinear")
+    .attr("transform", "translate(10, 15)");
+
+  var legendLinear = legendColor()
+    .shapeWidth(30)
+    .cells(cells)
+    .labelFormat(d3.format(format))
+    .orient('horizontal')
+    .title(title)
+    .scale(linear);
+
+  svg.select(".legendLinear")
+    .call(legendLinear);
+}
+
+
+async function saveTextureToLocalStorage(texture: Texture) {
+  localStorage.setItem('sst-texture', JSON.stringify(texture.source.toJSON()))
+}
+async function getLastTextureFromLocalStorage() {
+  let data = localStorage.getItem('sst-texture')
+  if (!data)
+    throw new Error("Can't get texture from local storage")
+  const jsonData = JSON.parse(data)
+  const texture = await textureLoader.loadAsync(jsonData.url)
+  return texture
 }
 
 async function init() {
@@ -143,10 +255,13 @@ async function init() {
     await loadTexture(props.dataset)
     texture.colorSpace = LinearSRGBColorSpace
 
+    await setupColormap(props.dataset)
+
     // A material that blends the transparent texture with a fixed color
     const textureMaterial = new ShaderMaterial({
         uniforms: {
             tex: { value: texture },
+            earthTex: { value: earthTexture },
             color: { value: props.landColor }
         },
         vertexShader: `
@@ -158,11 +273,18 @@ async function init() {
         `,
         fragmentShader: `
             uniform sampler2D tex;
+            uniform sampler2D earthTex;
             uniform vec3 color;
             varying vec2 vUv;
             void main() {
                 vec4 texColor = texture2D(tex, vUv);
-                gl_FragColor = mix(vec4(color, 1.0), texColor, texColor.a);
+                vec2 mapUv;
+                mapUv.y = vUv.y;
+                mapUv.x = vUv.x + 0.5; // offset to match longitude of main texture
+                vec4 earthTexColor = texture2D(earthTex, mapUv);
+                // vec4 bgColor = vec4(color, 1.0);
+                float alpha = texColor.a;
+                gl_FragColor = mix(earthTexColor, texColor, alpha);
             }
         `,
         transparent: true
@@ -255,7 +377,7 @@ async function init() {
     gui.add(props, 'dataset', ['Temperature', 'Temp Anomaly'])
       .name('Dataset')
       .onChange(async (val: String) => {
-        await loadTexture(val)
+        await Promise.all([setupColormap(val), loadTexture(val)]);
       })
     if (animateGlobe) {
       gui.add(animation, 'enabled').name('Auto Rotate')
@@ -273,7 +395,7 @@ async function init() {
 
       debugUI.add(props, 'showStats')
         .name("Show FPS Stats")
-        .onChange(val => {
+        .onChange((val: boolean) => {
           stats.dom.hidden = !val;
         })
       const cubeOneFolder = debugUI.addFolder('Globe')
@@ -321,6 +443,16 @@ async function init() {
     if (guiState) gui.load(JSON.parse(guiState))
 
   }
+
+  // Loaded
+  loadingComplete()
+}
+
+function loadingComplete() {
+  const date = document.getElementById('topdate')
+  if (date)
+    date.innerHTML = `Date: ${assets.sstMetadata.date}`
+  document.getElementsByClassName('loading').item(0)?.setAttribute('hidden', 'true')
 }
 
 function animate() {
