@@ -1,7 +1,9 @@
 {
-  "name": "threejs-starter-vite",
-  "private": true,
-  "version": "1.0.0",
+  "name": "globe-sst-viz",
+  "description": "Visualization of global daily sea surface temperature and anomaly",
+  "license": "MIT",
+  "author": "Gary Oberbrunner <garyo@oberbrunner.com> (https://oberbrunner.com)",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,6 +11,7 @@
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@types/d3": "^7.4.3",
     "@types/three": "^0.163.0",
     "typescript": "^5.4.5",
     "vite": "^5.2.11"

@@ -60,10 +60,22 @@ const props = {
 }
 
 
+export interface Metadata {
+  cmap: [number, string][]
+  title: string
+  dataset: string
+  date: string
+  year: number
+  month: number
+  day: number
+}
 
-let assets: {sstTexture: Blob|null, sstMetadata: {[Key: string]: any},
-  sstAnomalyTexture: Blob|null, sstAnomalyMetadata: {[Key: string]: any}} = {
-    sstTexture: null, sstMetadata: {}, sstAnomalyTexture: null, sstAnomalyMetadata: {}}
+let assets: {sstTexture: Blob|null, sstMetadata: Metadata,
+  sstAnomalyTexture: Blob|null, sstAnomalyMetadata: Metadata} = {
+    sstTexture: null,
+    sstMetadata: {cmap:[], title:"", dataset:"", date:"", year: 0, month: 0, day: 0},
+    sstAnomalyTexture: null,
+    sstAnomalyMetadata: {cmap:[], title:"", dataset:"", date:"", year: 0, month: 0, day: 0}}
 
 assets = await getAssets()
 await init()
@@ -159,9 +171,7 @@ async function setupColormap(datasetName: String) {
     title = 'Temperature Anomaly, °C'
     format = '.1f'
   }
-  var linear = d3.scaleLinear()
-    .domain(domains)
-    .range(ranges);
+  var linear = d3.scaleLinear(domains, ranges)
 
   var svg = d3.select("#colormap");
   svg.empty()               // remove old content
