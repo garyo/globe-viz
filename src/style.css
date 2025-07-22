@@ -14,31 +14,61 @@
     -webkit-text-size-adjust: 100%;
 }
 
+* {
+    box-sizing: border-box;
+}
+
 body {
     margin: 0;
+    padding: 0;
+    overflow: hidden; /* Prevent scroll on mobile */
 }
 
 body,
 html {
     height: 100%;
+    width: 100%;
 }
 
 #content {
-    height: 100%;
-    width: 100%;
-    display: grid;
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .topbar {
-    height: 80px;
+    min-height: 80px;
     outline: 1px solid lightblue;
-    display: grid;
-    grid-template-columns: 300px 500px 1fr;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem;
+    gap: 1rem;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.topbar > div:first-child {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0; /* Allow shrinking */
+    flex: 1;
+}
+
+.topbar > div:first-child > div {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .legendCells .label {
     font-size: 10pt;
 }
+
 .legendTitle {
     font-size: 14pt;
     transform: translate(0, 10px);
@@ -46,21 +76,30 @@ html {
 
 #colormap {
     background: #aaa;
-    width: 380px;
+    width: 100%;
+    max-width: 380px;
+    height: 80px;
+    flex-shrink: 0;
 }
 
 #scene-wrapper {
     position: relative;
+    flex: 1;
+    min-height: 0; /* Allow shrinking */
+    overflow: hidden;
 }
 
 #scene {
     width: 100%;
+    height: 100%;
     outline: none;
+    touch-action: none; /* Prevent default touch behaviors */
 
     background: rgb(100, 100, 100);
     background: linear-gradient(
-    0deg,
-        rgb(255, 255, 255) 0%, rgb(100, 100, 100) 100%
+        0deg,
+        rgb(255, 255, 255) 0%, 
+        rgb(100, 100, 100) 100%
     );
 }
 
@@ -68,6 +107,14 @@ html {
     position: absolute;
     top: 0;
     right: 0;
+    z-index: 10;
+}
+
+#stats {
+    position: absolute !important;
+    top: 1px !important;
+    left: 1px !important;
+    z-index: 5;
 }
 
 h1 {
@@ -75,123 +122,235 @@ h1 {
     line-height: 1.1;
 }
 
-
-/* loading spinner */
+/* Loading spinner */
 .loading {
-  position: fixed;
-  z-index: 999;
-  height: 2em;
-  width: 2em;
-  overflow: show;
-  margin: auto;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  right: 0;
+    position: fixed;
+    z-index: 999;
+    height: 2em;
+    width: 2em;
+    overflow: show;
+    margin: auto;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
 }
 
-/* Transparent Overlay */
 .loading:before {
-  content: '';
-  display: block;
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0,0,0,0.3);
+    content: '';
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.3);
 }
 
-/* :not(:required) hides these rules from IE9 and below */
 .loading:not(:required) {
-  /* hide "loading..." text */
-  font: 0/0 a;
-  color: transparent;
-  text-shadow: none;
-  background-color: transparent;
-  border: 0;
+    font: 0/0 a;
+    color: transparent;
+    text-shadow: none;
+    background-color: transparent;
+    border: 0;
 }
 
 .loading:not(:required):after {
-  content: '';
-  display: block;
-  font-size: 10px;
-  width: 1em;
-  height: 1em;
-  margin-top: -0.5em;
-  -webkit-animation: spinner 1500ms infinite linear;
-  -moz-animation: spinner 1500ms infinite linear;
-  -ms-animation: spinner 1500ms infinite linear;
-  -o-animation: spinner 1500ms infinite linear;
-  animation: spinner 1500ms infinite linear;
-  border-radius: 0.5em;
-  -webkit-box-shadow: rgba(0, 0, 0, 0.75) 1.5em 0 0 0, rgba(0, 0, 0, 0.75) 1.1em 1.1em 0 0, rgba(0, 0, 0, 0.75) 0 1.5em 0 0, rgba(0, 0, 0, 0.75) -1.1em 1.1em 0 0, rgba(0, 0, 0, 0.5) -1.5em 0 0 0, rgba(0, 0, 0, 0.5) -1.1em -1.1em 0 0, rgba(0, 0, 0, 0.75) 0 -1.5em 0 0, rgba(0, 0, 0, 0.75) 1.1em -1.1em 0 0;
-  box-shadow: rgba(0, 0, 0, 0.75) 1.5em 0 0 0, rgba(0, 0, 0, 0.75) 1.1em 1.1em 0 0, rgba(0, 0, 0, 0.75) 0 1.5em 0 0, rgba(0, 0, 0, 0.75) -1.1em 1.1em 0 0, rgba(0, 0, 0, 0.75) -1.5em 0 0 0, rgba(0, 0, 0, 0.75) -1.1em -1.1em 0 0, rgba(0, 0, 0, 0.75) 0 -1.5em 0 0, rgba(0, 0, 0, 0.75) 1.1em -1.1em 0 0;
+    content: '';
+    display: block;
+    font-size: 10px;
+    width: 1em;
+    height: 1em;
+    margin-top: -0.5em;
+    -webkit-animation: spinner 1500ms infinite linear;
+    -moz-animation: spinner 1500ms infinite linear;
+    -ms-animation: spinner 1500ms infinite linear;
+    -o-animation: spinner 1500ms infinite linear;
+    animation: spinner 1500ms infinite linear;
+    border-radius: 0.5em;
+    -webkit-box-shadow: rgba(0, 0, 0, 0.75) 1.5em 0 0 0, rgba(0, 0, 0, 0.75) 1.1em 1.1em 0 0, rgba(0, 0, 0, 0.75) 0 1.5em 0 0, rgba(0, 0, 0, 0.75) -1.1em 1.1em 0 0, rgba(0, 0, 0, 0.5) -1.5em 0 0 0, rgba(0, 0, 0, 0.5) -1.1em -1.1em 0 0, rgba(0, 0, 0, 0.75) 0 -1.5em 0 0, rgba(0, 0, 0, 0.75) 1.1em -1.1em 0 0;
+    box-shadow: rgba(0, 0, 0, 0.75) 1.5em 0 0 0, rgba(0, 0, 0, 0.75) 1.1em 1.1em 0 0, rgba(0, 0, 0, 0.75) 0 1.5em 0 0, rgba(0, 0, 0, 0.75) -1.1em 1.1em 0 0, rgba(0, 0, 0, 0.75) -1.5em 0 0 0, rgba(0, 0, 0, 0.75) -1.1em -1.1em 0 0, rgba(0, 0, 0, 0.75) 0 -1.5em 0 0, rgba(0, 0, 0, 0.75) 1.1em -1.1em 0 0;
 }
 
-/* Animation */
-
+/* Spinner animations */
 @-webkit-keyframes spinner {
-  0% {
-    -webkit-transform: rotate(0deg);
-    -moz-transform: rotate(0deg);
-    -ms-transform: rotate(0deg);
-    -o-transform: rotate(0deg);
-    transform: rotate(0deg);
-  }
-  100% {
-    -webkit-transform: rotate(360deg);
-    -moz-transform: rotate(360deg);
-    -ms-transform: rotate(360deg);
-    -o-transform: rotate(360deg);
-    transform: rotate(360deg);
-  }
+    0% { -webkit-transform: rotate(0deg); transform: rotate(0deg); }
+    100% { -webkit-transform: rotate(360deg); transform: rotate(360deg); }
 }
+
 @-moz-keyframes spinner {
-  0% {
-    -webkit-transform: rotate(0deg);
-    -moz-transform: rotate(0deg);
-    -ms-transform: rotate(0deg);
-    -o-transform: rotate(0deg);
-    transform: rotate(0deg);
-  }
-  100% {
-    -webkit-transform: rotate(360deg);
-    -moz-transform: rotate(360deg);
-    -ms-transform: rotate(360deg);
-    -o-transform: rotate(360deg);
-    transform: rotate(360deg);
-  }
+    0% { -moz-transform: rotate(0deg); transform: rotate(0deg); }
+    100% { -moz-transform: rotate(360deg); transform: rotate(360deg); }
 }
+
 @-o-keyframes spinner {
-  0% {
-    -webkit-transform: rotate(0deg);
-    -moz-transform: rotate(0deg);
-    -ms-transform: rotate(0deg);
-    -o-transform: rotate(0deg);
-    transform: rotate(0deg);
-  }
-  100% {
-    -webkit-transform: rotate(360deg);
-    -moz-transform: rotate(360deg);
-    -ms-transform: rotate(360deg);
-    -o-transform: rotate(360deg);
-    transform: rotate(360deg);
-  }
+    0% { -o-transform: rotate(0deg); transform: rotate(0deg); }
+    100% { -o-transform: rotate(360deg); transform: rotate(360deg); }
 }
+
 @keyframes spinner {
-  0% {
-    -webkit-transform: rotate(0deg);
-    -moz-transform: rotate(0deg);
-    -ms-transform: rotate(0deg);
-    -o-transform: rotate(0deg);
-    transform: rotate(0deg);
-  }
-  100% {
-    -webkit-transform: rotate(360deg);
-    -moz-transform: rotate(360deg);
-    -ms-transform: rotate(360deg);
-    -o-transform: rotate(360deg);
-    transform: rotate(360deg);
-  }
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Mobile and tablet responsive styles */
+@media screen and (max-width: 768px) {
+    :root {
+        font-size: 14px;
+    }
+    
+    .topbar {
+        min-height: 60px;
+        flex-direction: column;
+        align-items: stretch;
+        padding: 0.5rem;
+        gap: 0.5rem;
+    }
+    
+    .topbar > div:first-child {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+    
+    .topbar > div:first-child > div {
+        font-size: 0.9rem;
+    }
+    
+    #colormap {
+        height: 70px;
+        max-width: 100%;
+    }
+    
+    .legendCells .label {
+        font-size: 8pt;
+    }
+    
+    .legendTitle {
+        font-size: 12pt;
+    }
+    
+    /* Hide GUI on mobile by default - can be toggled */
+    #gui {
+        transform: translateX(100%);
+        transition: transform 0.3s ease-in-out;
+    }
+    
+    #gui.visible {
+        transform: translateX(0);
+    }
+    
+    /* Add a mobile menu button */
+    .mobile-menu-toggle {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        z-index: 20;
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        border: 1px solid #333;
+        border-radius: 4px;
+        padding: 8px 12px;
+        cursor: pointer;
+        font-size: 12px;
+        font-family: inherit;
+    }
+    
+    .mobile-menu-toggle:hover {
+        background: rgba(0, 0, 0, 0.9);
+    }
+}
+
+@media screen and (max-width: 480px) {
+    :root {
+        font-size: 12px;
+    }
+    
+    .topbar {
+        min-height: 50px;
+        padding: 0.25rem;
+    }
+    
+    .topbar > div:first-child > div {
+        font-size: 0.8rem;
+    }
+    
+    #colormap {
+        height: 60px;
+    }
+    
+    .legendCells .label {
+        font-size: 7pt;
+    }
+    
+    .legendTitle {
+        font-size: 10pt;
+    }
+}
+
+/* Landscape mobile orientation */
+@media screen and (max-height: 500px) and (orientation: landscape) {
+    .topbar {
+        min-height: 40px;
+        flex-direction: row;
+        padding: 0.25rem 0.5rem;
+    }
+    
+    .topbar > div:first-child {
+        flex-direction: row;
+        gap: 1rem;
+    }
+    
+    .topbar > div:first-child > div {
+        font-size: 0.8rem;
+    }
+    
+    #colormap {
+        height: 30px;
+        max-width: 300px;
+    }
+    
+    .legendCells .label {
+        font-size: 6pt;
+    }
+    
+    .legendTitle {
+        font-size: 9pt;
+    }
+}
+
+/* High DPI / Retina displays */
+@media screen and (-webkit-min-device-pixel-ratio: 2),
+       screen and (min-resolution: 192dpi) {
+    .legendCells .label,
+    .legendTitle {
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+}
+
+/* Ensure GUI is properly sized on all devices */
+.lil-gui {
+    --width: 280px;
+    --widget-height: 24px;
+    --padding: 6px;
+}
+
+@media screen and (max-width: 768px) {
+    .lil-gui {
+        --width: 260px;
+        --widget-height: 28px;
+        --padding: 8px;
+    }
+}
+
+@media screen and (max-width: 480px) {
+    .lil-gui {
+        --width: calc(100vw - 20px);
+        --widget-height: 32px;
+        --padding: 10px;
+        max-width: 300px;
+    }
 }

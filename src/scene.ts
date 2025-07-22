@@ -29,7 +29,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls'
 import Stats from 'three/examples/jsm/libs/stats.module'
 import * as animations from './helpers/animations'
 import { toggleFullScreen } from './helpers/fullscreen'
-import { resizeRendererToDisplaySize } from './helpers/responsiveness'
+import { resizeRendererToDisplaySize, isMobile, getViewportDimensions, createResizeHandler } from './helpers/responsiveness'
 import './style.css'
 
 const CANVAS_ID = 'scene'
@@ -50,6 +50,7 @@ let axesHelper: AxesHelper
 let clock: Clock
 let stats: Stats
 let gui: GUI
+let mobileMenuButton: HTMLButtonElement | null = null
 
 const animation = { enabled: false, play: true, speed: Math.PI / 10.0 }
 const props = {
@@ -58,7 +59,6 @@ const props = {
   daysAgo: 0,
   showStats: false,
 }
-
 
 export interface Metadata {
   cmap: [number, string][]
@@ -82,7 +82,6 @@ await init()
 animate()
 
 // Assets live in an Amazon S3 bucket, readable by everyone, sent with CORS headers
-// TODO: should run this once, save results and pass to other code
 async function getAssets() {
   if (!assets.sstTexture) {
     const bucketUrl = 'https://climate-change-assets.s3.amazonaws.com/sea-surface-temp/'
@@ -146,7 +145,7 @@ async function loadTexture(datasetName: String) {
 
   if (sphere) {
     const m = sphere.material as ShaderMaterial
-    m.uniforms.tex.value = texture // set it into the shader's uniform; doesn't get picked up automatically
+    m.uniforms.tex.value = texture
     m.uniforms.earthTex.value = earthTexture
   } else {
     console.log(`Not updating sphere material, sphere=${sphere}`)
@@ -174,14 +173,20 @@ async function setupColormap(datasetName: String) {
   var linear = d3.scaleLinear(domains, ranges)
 
   var svg = d3.select("#colormap");
-  svg.empty()               // remove old content
+  svg.selectAll("*").remove(); // Clear previous content properly
+
+  // Get current viewport dimensions for responsive sizing
+  const mobile = isMobile();
+  const shapeWidth = mobile ? 20 : 30;
+  const translateX = mobile ? 5 : 10;
+  const translateY = mobile ? 12 : 20; // Increased Y offset for better centering
 
   svg.append("g")
     .attr("class", "legendLinear")
-    .attr("transform", "translate(10, 15)");
+    .attr("transform", `translate(${translateX}, ${translateY})`);
 
   var legendLinear = legendColor()
-    .shapeWidth(30)
+    .shapeWidth(shapeWidth)
     .cells(cells)
     .labelFormat(d3.format(format))
     .orient('horizontal')
@@ -189,13 +194,13 @@ async function setupColormap(datasetName: String) {
     .scale(linear);
 
   svg.select(".legendLinear")
-    .call(legendLinear);
+    .call(legendLinear as any); // Type assertion to resolve d3 typing issue
 }
-
 
 async function saveTextureToLocalStorage(texture: Texture) {
   localStorage.setItem('sst-texture', JSON.stringify(texture.source.toJSON()))
 }
+
 async function getLastTextureFromLocalStorage() {
   let data = localStorage.getItem('sst-texture')
   if (!data)
@@ -258,7 +263,6 @@ async function init() {
 
   // ===== 📦 OBJECTS =====
   {
-
     const radius = 1
     const sphereGeometry = new SphereGeometry(radius, 101, 101)
     textureLoader = new TextureLoader();
@@ -292,7 +296,6 @@ async function init() {
                 mapUv.y = vUv.y;
                 mapUv.x = vUv.x + 0.5; // offset to match longitude of main texture
                 vec4 earthTexColor = texture2D(earthTex, mapUv);
-                // vec4 bgColor = vec4(color, 1.0);
                 float alpha = texColor.a;
                 gl_FragColor = mix(earthTexColor, texColor, alpha);
             }
@@ -320,13 +323,26 @@ async function init() {
       plane.receiveShadow = true
       scene.add(plane)
     }
-
   }
 
   // ===== 🎥 CAMERA =====
   {
     camera = new PerspectiveCamera(50, canvas.clientWidth / canvas.clientHeight, 0.1, 100)
-    camera.position.set(2, 1, 2)
+    
+    // Adjust initial camera position based on device type and viewport dimensions
+    const viewport = getViewportDimensions();
+    const aspectRatio = viewport.ratio;
+    const isNarrow = aspectRatio < 1; // Portrait orientation or very narrow screen
+    
+    if (isMobile()) {
+      // On mobile, adjust distance based on aspect ratio
+      const distance = isNarrow ? 3.0 : 2.5; // Further back on narrow screens
+      camera.position.set(distance, distance * 0.5, distance)
+    } else {
+      // Desktop positioning can also benefit from aspect ratio consideration
+      const distance = aspectRatio < 1.2 ? 2.5 : 2.0;
+      camera.position.set(distance, distance * 0.5, distance)
+    }
   }
 
   // ===== 🕹️ CONTROLS =====
@@ -335,13 +351,59 @@ async function init() {
     cameraControls.target = sphere.position.clone()
     cameraControls.enableDamping = true
     cameraControls.autoRotate = false
+    
+    // Mobile-specific control adjustments
+    const viewport = getViewportDimensions();
+    const aspectRatio = viewport.ratio;
+    
+    if (isMobile()) {
+      cameraControls.enablePan = true
+      cameraControls.enableZoom = true
+      cameraControls.enableRotate = true
+      cameraControls.rotateSpeed = 0.8
+      cameraControls.zoomSpeed = 0.8
+      cameraControls.panSpeed = 0.8
+      cameraControls.dampingFactor = 0.1
+      
+      // Adjust zoom limits based on aspect ratio
+      const minDist = aspectRatio < 1 ? 2.0 : 1.5; // Closer zoom on portrait
+      const maxDist = aspectRatio < 1 ? 10 : 8;    // Further zoom on portrait
+      
+      cameraControls.minDistance = minDist
+      cameraControls.maxDistance = maxDist
+      
+      // More restrictive polar angle on mobile to prevent awkward views
+      cameraControls.minPolarAngle = Math.PI * 0.1
+      cameraControls.maxPolarAngle = Math.PI * 0.9
+    } else {
+      // Desktop controls with aspect ratio consideration
+      const minDist = aspectRatio < 1.2 ? 1.5 : 1.2;
+      const maxDist = aspectRatio < 1.2 ? 12 : 10;
+      
+      cameraControls.minDistance = minDist
+      cameraControls.maxDistance = maxDist
+    }
+    
     cameraControls.update()
 
-    // Full screen
+    // Full screen - handle both double click and double tap
+    let lastTouchTime = 0
+    
     window.addEventListener('dblclick', (event) => {
       if (event.target === canvas) {
         toggleFullScreen(canvas)
       }
+    })
+    
+    // Handle double tap on mobile
+    canvas.addEventListener('touchend', (event) => {
+      const currentTime = new Date().getTime()
+      const tapLength = currentTime - lastTouchTime
+      if (tapLength < 500 && tapLength > 0) {
+        event.preventDefault()
+        toggleFullScreen(canvas)
+      }
+      lastTouchTime = currentTime
     })
   }
 
@@ -350,10 +412,6 @@ async function init() {
     axesHelper = new AxesHelper(4)
     axesHelper.visible = false
     scene.add(axesHelper)
-
-    // pointLightHelper = new PointLightHelper(pointLight, undefined, 'orange')
-    // pointLightHelper.visible = false
-    // scene.add(pointLightHelper)
 
     const gridHelper = new GridHelper(20, 20, 'teal', 'darkgray')
     gridHelper.position.y = -0.01
@@ -364,7 +422,6 @@ async function init() {
   {
     clock = new Clock()
     stats = new Stats()
-    // default positioning is fixed, top=0, left=0
     stats.dom.id = 'stats'
     stats.dom.style.position = 'absolute'
     stats.dom.style.top = '1px';
@@ -378,8 +435,22 @@ async function init() {
   // ==== MAIN GUI ====
   {
     const top = document.getElementById('scene-wrapper')
-    gui = new GUI({ title: 'Options', width: 300, container: top! })
+    
+    // Configure GUI width based on device
+    const guiWidth = isMobile() ? Math.min(280, window.innerWidth - 40) : 300
+    
+    gui = new GUI({ 
+      title: 'Options', 
+      width: guiWidth, 
+      container: top!,
+      closeFolders: isMobile() // Close folders by default on mobile
+    })
     gui.domElement.id = 'gui'
+    
+    // Create mobile menu toggle button
+    if (isMobile()) {
+      createMobileMenuToggle()
+    }
 
     const saveName = 'mainUiState'
     const animateGlobe = false  // if false, animate using camera
@@ -388,15 +459,20 @@ async function init() {
       .name('Dataset')
       .onChange(async (val: String) => {
         await Promise.all([setupColormap(val), loadTexture(val)]);
+        // On mobile, close the GUI after dataset change
+        if (isMobile()) {
+          toggleMobileMenu(false);
+        }
       })
+      
     if (animateGlobe) {
       gui.add(animation, 'enabled').name('Auto Rotate')
       gui.add(animation, 'speed', 0, Math.PI / 4, Math.PI / 400).name('Auto Rotate Speed')
     } else {
       gui.add(cameraControls, 'autoRotate').name('Auto Rotate')
       gui.add(cameraControls, 'autoRotateSpeed', 0, 5, 0.1).name('Auto Rotate Speed')
-
     }
+    
     gui.addColor(props, 'landColor').name('Land Color')
 
     // ==== 🐞 DEBUG GUI ====
@@ -410,10 +486,6 @@ async function init() {
         })
       const cubeOneFolder = debugUI.addFolder('Globe')
 
-      // cubeOneFolder.add(sphere.position, 'x').min(-5).max(5).step(0.5).name('pos x')
-      // cubeOneFolder.add(sphere.position, 'y').min(-5).max(5).step(0.5).name('pos y')
-      // cubeOneFolder.add(sphere.position, 'z').min(-5).max(5).step(0.5).name('pos z')
-
       cubeOneFolder
         .add(sphere.rotation, 'x', -Math.PI * 2, Math.PI * 2, Math.PI / 40)
         .name('rotate x')
@@ -424,13 +496,8 @@ async function init() {
         .add(sphere.rotation, 'z', -Math.PI * 2, Math.PI * 2, Math.PI / 40)
         .name('rotate z')
 
-      // const lightsFolder = debugUI.addFolder('Lights')
-      // lightsFolder.add(pointLight, 'visible').name('point light')
-      // lightsFolder.add(ambientLight, 'visible').name('ambient light')
-
       const helpersFolder = debugUI.addFolder('Helpers')
       helpersFolder.add(axesHelper, 'visible').name('axes')
-      // helpersFolder.add(pointLightHelper, 'visible').name('pointLight')
 
       debugUI.close()
     }
@@ -451,7 +518,52 @@ async function init() {
     // load GUI state if available in local storage
     const guiState = localStorage.getItem(saveName)
     if (guiState) gui.load(JSON.parse(guiState))
+  }
 
+  // Handle window resize and orientation changes
+  {
+    const handleResize = createResizeHandler(() => {
+      // Update camera aspect ratio
+      camera.aspect = canvas.clientWidth / canvas.clientHeight
+      camera.updateProjectionMatrix()
+      
+      // Update renderer size
+      resizeRendererToDisplaySize(renderer)
+      
+      // Recreate colormap with new dimensions if needed
+      const currentDataset = props.dataset
+      setupColormap(currentDataset)
+      
+      // Update camera positioning and controls based on new aspect ratio
+      const viewport = getViewportDimensions();
+      const aspectRatio = viewport.ratio;
+      
+      // Update zoom limits based on new aspect ratio
+      if (isMobile()) {
+        const minDist = aspectRatio < 1 ? 2.0 : 1.5;
+        const maxDist = aspectRatio < 1 ? 10 : 8;
+        cameraControls.minDistance = minDist
+        cameraControls.maxDistance = maxDist
+      } else {
+        const minDist = aspectRatio < 1.2 ? 1.5 : 1.2;
+        const maxDist = aspectRatio < 1.2 ? 12 : 10;
+        cameraControls.minDistance = minDist
+        cameraControls.maxDistance = maxDist
+      }
+      
+      // Update GUI width on mobile
+      if (isMobile() && gui) {
+        const newWidth = Math.min(280, window.innerWidth - 40)
+        // Note: lil-gui doesn't have a direct width setter, but we can update via CSS
+        gui.domElement.style.width = `${newWidth}px`
+      }
+    }, 150)
+    
+    window.addEventListener('resize', handleResize)
+    window.addEventListener('orientationchange', () => {
+      // Small delay to let the browser finish orientation change
+      setTimeout(handleResize, 200)
+    })
   }
 
   // Loaded
@@ -463,6 +575,34 @@ function loadingComplete() {
   if (date)
     date.innerHTML = `Date: ${assets.sstMetadata.date}`
   document.getElementsByClassName('loading').item(0)?.setAttribute('hidden', 'true')
+}
+
+function createMobileMenuToggle() {
+  if (mobileMenuButton) return; // Already exists
+  
+  mobileMenuButton = document.createElement('button')
+  mobileMenuButton.className = 'mobile-menu-toggle'
+  mobileMenuButton.innerHTML = 'Options'
+  mobileMenuButton.addEventListener('click', () => toggleMobileMenu())
+  
+  const sceneWrapper = document.getElementById('scene-wrapper')
+  sceneWrapper?.appendChild(mobileMenuButton)
+}
+
+function toggleMobileMenu(forceState?: boolean) {
+  const guiElement = document.getElementById('gui')
+  if (!guiElement) return
+  
+  const isVisible = guiElement.classList.contains('visible')
+  const shouldShow = forceState !== undefined ? forceState : !isVisible
+  
+  if (shouldShow) {
+    guiElement.classList.add('visible')
+    if (mobileMenuButton) mobileMenuButton.innerHTML = 'Close'
+  } else {
+    guiElement.classList.remove('visible')
+    if (mobileMenuButton) mobileMenuButton.innerHTML = 'Options'
+  }
 }
 
 function animate() {
