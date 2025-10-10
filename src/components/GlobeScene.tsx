@@ -1,0 +1,191 @@
+import { onMount, onCleanup, createEffect } from 'solid-js';
+import { appState } from '../stores/appState';
+import { toggleFullScreen } from '../lib/helpers/fullscreen';
+import { createResizeHandler } from '../lib/helpers/responsiveness-client';
+import {
+  createRenderer,
+  createScene,
+  createLights,
+  createHelpers,
+  createStats,
+  createTextureLoader,
+  resizeRendererToDisplaySize,
+} from '../lib/scene/setup';
+import { createCamera, createControls, updateCameraAspect, updateControlsForResize } from '../lib/scene/camera';
+import { createGlobe, updateGlobeTexture } from '../lib/scene/globe';
+import type { WebGLRenderer, Scene, PerspectiveCamera, Mesh, AxesHelper } from 'three';
+import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import type Stats from 'three/examples/jsm/libs/stats.module';
+
+export const GlobeScene = () => {
+  let canvasRef: HTMLCanvasElement | undefined;
+  let wrapperRef: HTMLDivElement | undefined;
+
+  let renderer: WebGLRenderer;
+  let scene: Scene;
+  let camera: PerspectiveCamera;
+  let controls: OrbitControls;
+  let globe: Mesh;
+  let axesHelper: AxesHelper;
+  let stats: Stats;
+  let animationId: number;
+  let textureLoader: ReturnType<typeof createTextureLoader>;
+
+  onMount(async () => {
+    if (!canvasRef || !wrapperRef) return;
+
+    // Initialize Three.js scene
+    renderer = createRenderer(canvasRef);
+    scene = createScene();
+    camera = createCamera(canvasRef);
+
+    // Add lights and helpers
+    createLights(scene);
+    const helpers = createHelpers(scene);
+    axesHelper = helpers.axesHelper;
+
+    // Create stats
+    stats = createStats(wrapperRef);
+    stats.dom.hidden = !appState.showStats;
+
+    // Create texture loader (reused for all texture operations)
+    textureLoader = createTextureLoader();
+
+    // Load initial globe
+    const dataBlob =
+      appState.dataset === 'Temperature'
+        ? appState.assets.sstTexture
+        : appState.assets.sstAnomalyTexture;
+
+    if (dataBlob) {
+      const result = await createGlobe(textureLoader, dataBlob);
+      globe = result.mesh;
+      scene.add(globe);
+
+      // Create controls (needs globe position for target)
+      controls = createControls(camera, canvasRef, globe.position);
+
+      // Initialize controls with saved state
+      controls.autoRotate = appState.autoRotate;
+      controls.autoRotateSpeed = appState.autoRotateSpeed;
+    }
+
+    // Fullscreen on double-click or double-tap
+    setupFullscreenHandlers();
+
+    // Handle window resize
+    setupResizeHandler();
+
+    // Start animation loop
+    animate();
+  });
+
+  onCleanup(() => {
+    if (animationId) {
+      cancelAnimationFrame(animationId);
+    }
+    if (renderer) {
+      renderer.dispose();
+    }
+    if (controls) {
+      controls.dispose();
+    }
+  });
+
+  // React to dataset changes
+  createEffect(() => {
+    // IMPORTANT: Track reactive values BEFORE any early returns
+    const dataset = appState.dataset;
+    const sstTexture = appState.assets.sstTexture;
+    const sstAnomalyTexture = appState.assets.sstAnomalyTexture;
+
+    // Now we can do conditional checks
+    if (!globe || !textureLoader || !sstTexture) return;
+
+    const dataBlob = dataset === 'Temperature' ? sstTexture : sstAnomalyTexture;
+
+    if (dataBlob) {
+      // Use void to handle the promise without breaking reactivity
+      void updateGlobeTexture(globe, textureLoader, dataBlob);
+    }
+  });
+
+  // React to auto-rotate changes
+  createEffect(() => {
+    // Make sure to track these values
+    const autoRotate = appState.autoRotate;
+    const autoRotateSpeed = appState.autoRotateSpeed;
+
+    if (!controls) return;
+    controls.autoRotate = autoRotate;
+    controls.autoRotateSpeed = autoRotateSpeed;
+  });
+
+  // React to showStats changes
+  createEffect(() => {
+    if (!stats) return;
+    stats.dom.hidden = !appState.showStats;
+  });
+
+  // React to showAxes changes
+  createEffect(() => {
+    if (!axesHelper) return;
+    axesHelper.visible = appState.showAxes;
+  });
+
+  function animate() {
+    animationId = requestAnimationFrame(animate);
+
+    if (stats) stats.update();
+
+    if (resizeRendererToDisplaySize(renderer)) {
+      updateCameraAspect(camera, renderer.domElement);
+    }
+
+    if (controls) controls.update();
+
+    renderer.render(scene, camera);
+  }
+
+  function setupFullscreenHandlers() {
+    if (!canvasRef) return;
+
+    let lastTouchTime = 0;
+
+    window.addEventListener('dblclick', (event) => {
+      if (event.target === canvasRef) {
+        toggleFullScreen(canvasRef!);
+      }
+    });
+
+    canvasRef.addEventListener('touchend', (event) => {
+      const currentTime = new Date().getTime();
+      const tapLength = currentTime - lastTouchTime;
+      if (tapLength < 500 && tapLength > 0) {
+        event.preventDefault();
+        toggleFullScreen(canvasRef!);
+      }
+      lastTouchTime = currentTime;
+    });
+  }
+
+  function setupResizeHandler() {
+    const handleResize = createResizeHandler(() => {
+      updateCameraAspect(camera, renderer.domElement);
+      if (controls) {
+        updateControlsForResize(controls);
+      }
+    }, 150);
+
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', () => {
+      setTimeout(handleResize, 200);
+    });
+  }
+
+  return (
+    <div ref={wrapperRef} id="scene-wrapper">
+      <canvas ref={canvasRef} id="scene"></canvas>
+    </div>
+  );
+};
