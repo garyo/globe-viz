@@ -55,7 +55,7 @@ const initialState: AppState = {
   dataset: 'Temp Anomaly',
   landColor: '#aaaaaa',
   autoRotate: false,
-  autoRotateSpeed: 2.0,
+  autoRotateSpeed: 0.5,
   showStats: false,
   showAxes: false,
   assets: {

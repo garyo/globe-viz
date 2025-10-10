@@ -11,17 +11,10 @@ export const ControlPanel = () => {
   const [debugOpen, setDebugOpen] = createSignal(false);
   const [menuVisible, setMenuVisible] = createSignal(false);
   const [mobile, setMobile] = createSignal(false);
-  const [collapsed, setCollapsed] = createSignal(false);
 
   // Detect mobile on mount (client-side only)
   onMount(() => {
     setMobile(isMobile());
-
-    // Load collapsed state from localStorage
-    const savedCollapsed = localStorage.getItem('controlPanelCollapsed');
-    if (savedCollapsed !== null) {
-      setCollapsed(savedCollapsed === 'true');
-    }
   });
 
   const handleDatasetChange = (value: typeof appState.dataset) => {
@@ -61,39 +54,21 @@ export const ControlPanel = () => {
     setMenuVisible(!menuVisible());
   };
 
-  const toggleCollapsed = () => {
-    const newCollapsed = !collapsed();
-    setCollapsed(newCollapsed);
-    localStorage.setItem('controlPanelCollapsed', String(newCollapsed));
-  };
-
   return (
     <>
-      <Show when={mobile()}>
-        <button class="mobile-menu-toggle" onClick={toggleMenu}>
-          {menuVisible() ? 'Close' : 'Options'}
-        </button>
-      </Show>
+      <button class="menu-toggle" onClick={toggleMenu}>
+        {menuVisible() ? 'Close' : 'Options'}
+      </button>
 
       <div
         class="control-panel"
-        classList={{ visible: menuVisible() || !mobile() }}
+        classList={{ visible: menuVisible() }}
       >
         <div class="control-panel-header">
           <h3>Options</h3>
-          <button
-            class="collapse-button"
-            onClick={toggleCollapsed}
-            aria-label={collapsed() ? 'Expand panel' : 'Collapse panel'}
-          >
-            <span class="chevron" classList={{ open: !collapsed() }}>
-              ▼
-            </span>
-          </button>
         </div>
 
-        <Show when={!collapsed()}>
-          <div class="control-panel-body">
+        <div class="control-panel-body">
             <Select
               label="Dataset"
               value={appState.dataset}
@@ -148,8 +123,7 @@ export const ControlPanel = () => {
             <button class="control-reset-button" onClick={handleReset}>
               RESET
             </button>
-          </div>
-        </Show>
+        </div>
       </div>
     </>
   );

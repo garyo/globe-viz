@@ -49,9 +49,20 @@ export function renderColormap(
   svg.selectAll('*').remove();
 
   const mobile = isMobile();
+  const height = svgElement.clientHeight;
+
+  // Adjust positioning based on actual SVG height
   const shapeWidth = mobile ? 20 : 30;
   const translateX = mobile ? 5 : 10;
-  const translateY = mobile ? 12 : 20;
+
+  // Scale translateY proportionally to available height
+  // Use 3px for very small heights, 5px for mobile, 20px for desktop
+  let translateY = 20;
+  if (height <= 40) {
+    translateY = 3;
+  } else if (height <= 70) {
+    translateY = 5;
+  }
 
   svg
     .append('g')
