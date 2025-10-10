@@ -5,6 +5,9 @@
   "author": "Gary Oberbrunner <garyo@oberbrunner.com> (https://oberbrunner.com)",
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=18.20.8"
+  },
   "scripts": {
     "dev": "astro dev",
     "build": "astro check && astro build",
