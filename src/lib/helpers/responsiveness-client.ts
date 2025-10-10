@@ -9,6 +9,7 @@
  * IMPORTANT: Call only from client-side contexts (onMount, effects, event handlers)
  */
 export function isMobile(): boolean {
+  // @ts-ignore - navigator.vendor is deprecated but still needed for device detection
   const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera || ''
   const mobileRegex = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i
 
@@ -42,6 +43,7 @@ export function isTablet(): boolean {
   const viewport = getViewportDimensions()
   const userAgent = navigator.userAgent.toLowerCase()
 
+  // @ts-ignore - navigator.platform is deprecated but still needed for iPad detection
   const isIPad = /ipad/.test(userAgent) ||
                 (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 
