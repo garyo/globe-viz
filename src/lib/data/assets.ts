@@ -1,11 +1,12 @@
 import type { Metadata } from '../../stores/appState';
+import { TextureLoader, LinearSRGBColorSpace, type Texture } from 'three';
 
 const BUCKET_URL = 'https://climate-change-assets.s3.amazonaws.com/sea-surface-temp/';
 
 export interface Assets {
-  sstTexture: Blob;
+  sstTexture: Texture;
   sstMetadata: Metadata;
-  sstAnomalyTexture: Blob;
+  sstAnomalyTexture: Texture;
   sstAnomalyMetadata: Metadata;
 }
 
@@ -27,9 +28,11 @@ export async function fetchDateIndex(): Promise<DateIndex> {
 
 /**
  * Fetch assets for a specific date, or the latest if no date is provided
+ * Creates Three.js Texture objects immediately to avoid decode during rendering
  * @param date - Optional date string in YYYY-MM-DD format. If not provided, fetches latest (non-dated) files
+ * @param textureLoader - Three.js TextureLoader instance for loading textures
  */
-export async function fetchAssetsForDate(date?: string): Promise<Assets> {
+export async function fetchAssetsForDate(date: string | undefined, textureLoader: TextureLoader): Promise<Assets> {
   // If date is provided, use date-prefixed filenames
   const prefix = date ? `${date}-` : '';
 
@@ -38,31 +41,55 @@ export async function fetchAssetsForDate(date?: string): Promise<Assets> {
   const sstAnomalyTextureUrl = BUCKET_URL + `${prefix}sst-temp-anomaly-equirect.webp`;
   const sstAnomalyMetadataUrl = BUCKET_URL + `${prefix}sst-temp-anomaly-equirect-metadata.json`;
 
-  const [sstTextureResult, sstMetadataResult, sstAnomalyTextureResult, sstAnomalyMetadataResult] =
+  const [sstTextureBlob, sstMetadata, sstAnomalyTextureBlob, sstAnomalyMetadata] =
     await Promise.all([
-      fetch(sstTextureUrl),
-      fetch(sstMetadataUrl),
-      fetch(sstAnomalyTextureUrl),
-      fetch(sstAnomalyMetadataUrl),
+      fetch(sstTextureUrl).then(async (res) => {
+        if (!res.ok) throw new Error(`Failed to fetch SST texture: ${res.statusText}`);
+        return res.blob();
+      }),
+      fetch(sstMetadataUrl).then(async (res) => {
+        if (!res.ok) throw new Error(`Failed to fetch SST metadata: ${res.statusText}`);
+        return res.json();
+      }),
+      fetch(sstAnomalyTextureUrl).then(async (res) => {
+        if (!res.ok) throw new Error(`Failed to fetch SST anomaly texture: ${res.statusText}`);
+        return res.blob();
+      }),
+      fetch(sstAnomalyMetadataUrl).then(async (res) => {
+        if (!res.ok) throw new Error(`Failed to fetch SST anomaly metadata: ${res.statusText}`);
+        return res.json();
+      }),
     ]);
 
-  // Check for errors
-  if (!sstTextureResult.ok || !sstMetadataResult.ok ||
-      !sstAnomalyTextureResult.ok || !sstAnomalyMetadataResult.ok) {
-    throw new Error(`Failed to fetch assets for date: ${date || 'latest'}`);
-  }
+  // Create Three.js textures from blobs
+  const sstTextureUrl_obj = URL.createObjectURL(sstTextureBlob);
+  const sstAnomalyTextureUrl_obj = URL.createObjectURL(sstAnomalyTextureBlob);
+
+  const [sstTexture, sstAnomalyTexture] = await Promise.all([
+    textureLoader.loadAsync(sstTextureUrl_obj),
+    textureLoader.loadAsync(sstAnomalyTextureUrl_obj),
+  ]);
+
+  // Configure textures
+  sstTexture.colorSpace = LinearSRGBColorSpace;
+  sstTexture.userData.objectUrl = sstTextureUrl_obj;
+  sstTexture.userData.date = date;
+
+  sstAnomalyTexture.colorSpace = LinearSRGBColorSpace;
+  sstAnomalyTexture.userData.objectUrl = sstAnomalyTextureUrl_obj;
+  sstAnomalyTexture.userData.date = date;
 
   return {
-    sstTexture: await sstTextureResult.blob(),
-    sstMetadata: await sstMetadataResult.json(),
-    sstAnomalyTexture: await sstAnomalyTextureResult.blob(),
-    sstAnomalyMetadata: await sstAnomalyMetadataResult.json(),
+    sstTexture,
+    sstMetadata,
+    sstAnomalyTexture,
+    sstAnomalyMetadata,
   };
 }
 
 /**
  * Fetch the latest assets (backward compatibility)
  */
-export async function fetchAssets(): Promise<Assets> {
-  return fetchAssetsForDate();
+export async function fetchAssets(textureLoader: TextureLoader): Promise<Assets> {
+  return fetchAssetsForDate(undefined, textureLoader);
 }

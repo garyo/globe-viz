@@ -1,6 +1,7 @@
 import { createSignal, onMount, onCleanup, Show, type ParentComponent } from 'solid-js';
 import { setAppState, appState } from '../stores/appState';
 import { fetchDateIndex, fetchAssetsForDate } from '../lib/data/assets';
+import { TextureLoader } from 'three';
 
 export const AppLoader: ParentComponent = (props) => {
   const [isLoading, setIsLoading] = createSignal(true);
@@ -10,6 +11,9 @@ export const AppLoader: ParentComponent = (props) => {
 
   onMount(async () => {
     try {
+      // Create texture loader for initial asset loading
+      const textureLoader = new TextureLoader();
+
       // First, fetch the index of available dates
       const dateIndex = await fetchDateIndex();
 
@@ -22,7 +26,7 @@ export const AppLoader: ParentComponent = (props) => {
 
       // Fetch assets for the latest date
       const latestDate = dateIndex.latest;
-      const assets = await fetchAssetsForDate(latestDate);
+      const assets = await fetchAssetsForDate(latestDate, textureLoader);
 
       setAppState('assets', {
         sstTexture: assets.sstTexture,

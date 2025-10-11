@@ -1,30 +1,52 @@
-import { onMount, createEffect } from 'solid-js';
+import { onMount, createEffect, createMemo } from 'solid-js';
 import { appState } from '../stores/appState';
-import { getColormapConfig, renderColormap } from '../lib/data/colormap';
+import { getColormapConfig, renderColormap, type ColormapConfig } from '../lib/data/colormap';
 
 export const TopBar = () => {
   let svgRef: SVGSVGElement | undefined;
+  let lastConfig: ColormapConfig | null = null;
 
-  onMount(() => {
-    updateColormap();
-  });
+  // Compute colormap config reactively - only changes when dataset or metadata changes
+  const colormapConfig = createMemo(() => {
+    if (!appState.assets.sstMetadata.cmap.length) return null;
 
-  createEffect(() => {
-    // Re-render colormap when dataset changes
-    appState.dataset; // Track this value
-    updateColormap();
-  });
-
-  const updateColormap = () => {
-    if (!svgRef || !appState.assets.sstMetadata.cmap.length) return;
-
-    const config = getColormapConfig(
+    return getColormapConfig(
       appState.dataset,
       appState.assets.sstMetadata,
       appState.assets.sstAnomalyMetadata
     );
+  });
+
+  onMount(() => {
+    const config = colormapConfig();
+    if (config && svgRef) {
+      renderColormap(svgRef, config);
+      lastConfig = config;
+    }
+  });
+
+  createEffect(() => {
+    const config = colormapConfig();
+
+    // Skip if no config, no SVG ref, or config hasn't changed
+    if (!config || !svgRef) return;
+
+    // Only re-render if config actually changed
+    if (lastConfig && configEquals(lastConfig, config)) {
+      return;
+    }
 
     renderColormap(svgRef, config);
+    lastConfig = config;
+  });
+
+  // Check if two configs are equal (same colormap data)
+  const configEquals = (a: ColormapConfig, b: ColormapConfig): boolean => {
+    return a.title === b.title &&
+           a.format === b.format &&
+           a.domains.length === b.domains.length &&
+           a.domains.every((val, idx) => val === b.domains[idx]) &&
+           a.ranges.every((val, idx) => val === b.ranges[idx]);
   };
 
   const getDate = () => {

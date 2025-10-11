@@ -1,5 +1,5 @@
 import { createStore } from 'solid-js/store';
-import { Color } from 'three';
+import { Color, type Texture } from 'three';
 
 export interface Metadata {
   cmap: [number, string][];
@@ -28,9 +28,9 @@ export interface AppState {
 
   // Data
   assets: {
-    sstTexture: Blob | null;
+    sstTexture: Texture | null;
     sstMetadata: Metadata;
-    sstAnomalyTexture: Blob | null;
+    sstAnomalyTexture: Texture | null;
     sstAnomalyMetadata: Metadata;
   };
 

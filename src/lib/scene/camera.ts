@@ -64,8 +64,13 @@ export function createControls(
 }
 
 export function updateCameraAspect(camera: PerspectiveCamera, canvas: HTMLCanvasElement) {
-  camera.aspect = canvas.clientWidth / canvas.clientHeight;
-  camera.updateProjectionMatrix();
+  const newAspect = canvas.clientWidth / canvas.clientHeight;
+
+  // Only update if aspect ratio actually changed (avoid unnecessary matrix recalculation)
+  if (Math.abs(camera.aspect - newAspect) > 0.001) {
+    camera.aspect = newAspect;
+    camera.updateProjectionMatrix();
+  }
 }
 
 export function updateControlsForResize(controls: OrbitControls) {

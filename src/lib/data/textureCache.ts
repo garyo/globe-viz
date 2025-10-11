@@ -3,6 +3,7 @@ import type { Assets } from './assets';
 /**
  * LRU cache for texture assets to avoid re-fetching from S3
  * Stores up to maxSize entries, evicting least recently used when full
+ * Properly disposes of Three.js textures and Object URLs to prevent memory leaks
  */
 export class TextureCache {
   private cache: Map<string, Assets>;
@@ -11,6 +12,22 @@ export class TextureCache {
   constructor(maxSize = 100) {
     this.cache = new Map();
     this.maxSize = maxSize;
+  }
+
+  /**
+   * Dispose of textures and clean up Object URLs in an Assets object
+   */
+  private disposeAssets(assets: Assets): void {
+    // Clean up SST texture
+    if (assets.sstTexture && assets.sstTexture.userData.objectUrl) {
+      URL.revokeObjectURL(assets.sstTexture.userData.objectUrl);
+      assets.sstTexture.dispose();
+    }
+    // Clean up SST anomaly texture
+    if (assets.sstAnomalyTexture && assets.sstAnomalyTexture.userData.objectUrl) {
+      URL.revokeObjectURL(assets.sstAnomalyTexture.userData.objectUrl);
+      assets.sstAnomalyTexture.dispose();
+    }
   }
 
   /**
@@ -32,8 +49,12 @@ export class TextureCache {
    * Evicts LRU entry if cache is full
    */
   set(date: string, assets: Assets): void {
-    // If already exists, delete it first so we can re-add at end
+    // If already exists, dispose old assets first
     if (this.cache.has(date)) {
+      const oldAssets = this.cache.get(date);
+      if (oldAssets) {
+        this.disposeAssets(oldAssets);
+      }
       this.cache.delete(date);
     }
 
@@ -42,6 +63,10 @@ export class TextureCache {
       // Map iteration order is insertion order, so first entry is LRU
       const firstKey = this.cache.keys().next().value;
       if (firstKey !== undefined) {
+        const evictedAssets = this.cache.get(firstKey);
+        if (evictedAssets) {
+          this.disposeAssets(evictedAssets);
+        }
         this.cache.delete(firstKey);
       }
     }
@@ -58,9 +83,12 @@ export class TextureCache {
   }
 
   /**
-   * Clear all cached entries
+   * Clear all cached entries and dispose of textures
    */
   clear(): void {
+    for (const assets of this.cache.values()) {
+      this.disposeAssets(assets);
+    }
     this.cache.clear();
   }
 

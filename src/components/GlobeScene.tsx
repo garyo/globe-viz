@@ -58,13 +58,13 @@ export const GlobeScene = () => {
     textureLoader = createTextureLoader();
 
     // Load initial globe
-    const dataBlob =
+    const dataTexture =
       appState.dataset === 'Temperature'
         ? appState.assets.sstTexture
         : appState.assets.sstAnomalyTexture;
 
-    if (dataBlob) {
-      const result = await createGlobe(textureLoader, dataBlob);
+    if (dataTexture) {
+      const result = await createGlobe(textureLoader, dataTexture);
       globe = result.mesh;
       scene.add(globe);
 
@@ -109,13 +109,13 @@ export const GlobeScene = () => {
     const sstAnomalyTexture = appState.assets.sstAnomalyTexture;
 
     // Now we can do conditional checks
-    if (!globe || !textureLoader || !sstTexture) return;
+    if (!globe || !sstTexture) return;
 
-    const dataBlob = dataset === 'Temperature' ? sstTexture : sstAnomalyTexture;
+    const dataTexture = dataset === 'Temperature' ? sstTexture : sstAnomalyTexture;
 
-    if (dataBlob) {
-      // Use void to handle the promise without breaking reactivity
-      void updateGlobeTexture(globe, textureLoader, dataBlob);
+    if (dataTexture) {
+      // No async needed - texture is pre-decoded!
+      updateGlobeTexture(globe, dataTexture);
     }
   });
 
@@ -148,7 +148,7 @@ export const GlobeScene = () => {
     const currentDateIndex = appState.currentDateIndex;
     const availableDates = appState.availableDates;
 
-    if (availableDates.length === 0 || !globe || !textureLoader) return;
+    if (availableDates.length === 0 || !globe || !textureLoader || !renderer) return;
 
     const date = availableDates[currentDateIndex];
     if (!date) return;
@@ -159,8 +159,13 @@ export const GlobeScene = () => {
         let assets = textureCache.get(date);
 
         if (!assets) {
-          // Cache miss - fetch from S3
-          assets = await fetchAssetsForDate(date);
+          // Cache miss - fetch from S3 and create textures
+          assets = await fetchAssetsForDate(date, textureLoader);
+
+          // Pre-decode textures on GPU before caching
+          renderer.initTexture(assets.sstTexture);
+          renderer.initTexture(assets.sstAnomalyTexture);
+
           textureCache.set(date, assets);
         }
 
@@ -227,7 +232,7 @@ export const GlobeScene = () => {
     const currentDateIndex = appState.currentDateIndex;
     const availableDates = appState.availableDates;
 
-    if (!isAnimating || availableDates.length <= 1) return;
+    if (!isAnimating || availableDates.length <= 1 || !textureLoader || !renderer) return;
 
     // Calculate next date index
     const nextIndex = (currentDateIndex + 1) % availableDates.length;
@@ -239,7 +244,13 @@ export const GlobeScene = () => {
     if (!textureCache.has(nextDate)) {
       void (async () => {
         try {
-          const assets = await fetchAssetsForDate(nextDate);
+          const assets = await fetchAssetsForDate(nextDate, textureLoader);
+
+          // CRITICAL: Pre-decode textures on GPU NOW, before they're needed
+          // This eliminates decode stutter during animation!
+          renderer.initTexture(assets.sstTexture);
+          renderer.initTexture(assets.sstAnomalyTexture);
+
           textureCache.set(nextDate, assets);
         } catch (err) {
           // Silently fail - not critical

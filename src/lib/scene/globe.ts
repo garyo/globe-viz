@@ -15,16 +15,13 @@ export interface GlobeTextures {
 
 export async function createGlobe(
   textureLoader: TextureLoader,
-  dataBlob: Blob
+  dataTexture: Texture
 ): Promise<{ mesh: Mesh; textures: GlobeTextures }> {
   const sphereGeometry = new SphereGeometry(1, 101, 101);
 
-  // Load data texture from blob
-  const dataTextureUrl = URL.createObjectURL(dataBlob);
-  const dataTexture = await textureLoader.loadAsync(dataTextureUrl);
+  // Data texture is already loaded and configured
+  // Just ensure color space is set
   dataTexture.colorSpace = LinearSRGBColorSpace;
-  // Store URL for cleanup later
-  dataTexture.userData.objectUrl = dataTextureUrl;
 
   // Load earth base texture
   const earthTexture = await textureLoader
@@ -79,33 +76,20 @@ export async function createGlobe(
 }
 
 /**
- * Updates the globe's data texture with a new blob.
- * Properly cleans up old textures and Object URLs to prevent memory leaks.
+ * Updates the globe's data texture with a pre-decoded texture.
+ * Note: Does NOT dispose old texture as it may still be in cache.
  */
-export async function updateGlobeTexture(
+export function updateGlobeTexture(
   mesh: Mesh,
-  textureLoader: TextureLoader,
-  dataBlob: Blob
-): Promise<Texture> {
+  newTexture: Texture
+): void {
   const material = mesh.material as ShaderMaterial;
-  const oldTexture = material.uniforms.tex.value as Texture;
 
-  // Clean up old texture and its Object URL to prevent memory leak
-  if (oldTexture && oldTexture.userData.objectUrl) {
-    URL.revokeObjectURL(oldTexture.userData.objectUrl);
-    oldTexture.dispose();
-  }
-
-  // Create new texture
-  const dataTextureUrl = URL.createObjectURL(dataBlob);
-  const newTexture = await textureLoader.loadAsync(dataTextureUrl);
+  // Ensure color space is set
   newTexture.colorSpace = LinearSRGBColorSpace;
-  // Store URL for cleanup later
-  newTexture.userData.objectUrl = dataTextureUrl;
 
+  // Simply swap the texture - no async decode needed!
   material.uniforms.tex.value = newTexture;
   material.needsUpdate = true;
-
-  return newTexture;
 }
 
