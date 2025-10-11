@@ -3,6 +3,13 @@ import { TextureLoader, LinearSRGBColorSpace, type Texture } from 'three';
 
 const BUCKET_URL = 'https://climate-change-assets.s3.amazonaws.com/sea-surface-temp/';
 
+// Single dataset assets - only fetch what we need
+export interface DatasetAssets {
+  texture: Texture;
+  metadata: Metadata;
+}
+
+// Legacy interface for backward compatibility during migration
 export interface Assets {
   sstTexture: Texture;
   sstMetadata: Metadata;
@@ -27,63 +34,72 @@ export async function fetchDateIndex(): Promise<DateIndex> {
 }
 
 /**
- * Fetch assets for a specific date, or the latest if no date is provided
- * Creates Three.js Texture objects immediately to avoid decode during rendering
+ * Fetch assets for a specific dataset and date
+ * Only fetches the requested dataset to save memory
  * @param date - Optional date string in YYYY-MM-DD format. If not provided, fetches latest (non-dated) files
+ * @param dataset - Which dataset to fetch: 'Temperature' or 'Temp Anomaly'
  * @param textureLoader - Three.js TextureLoader instance for loading textures
  */
-export async function fetchAssetsForDate(date: string | undefined, textureLoader: TextureLoader): Promise<Assets> {
+export async function fetchDatasetAssets(
+  date: string | undefined,
+  dataset: 'Temperature' | 'Temp Anomaly',
+  textureLoader: TextureLoader
+): Promise<DatasetAssets> {
   // If date is provided, use date-prefixed filenames
   const prefix = date ? `${date}-` : '';
 
-  const sstTextureUrl = BUCKET_URL + `${prefix}sst-temp-equirect.webp`;
-  const sstMetadataUrl = BUCKET_URL + `${prefix}sst-temp-equirect-metadata.json`;
-  const sstAnomalyTextureUrl = BUCKET_URL + `${prefix}sst-temp-anomaly-equirect.webp`;
-  const sstAnomalyMetadataUrl = BUCKET_URL + `${prefix}sst-temp-anomaly-equirect-metadata.json`;
+  // Determine which files to fetch based on dataset
+  const isTemperature = dataset === 'Temperature';
+  const suffix = isTemperature ? 'sst-temp-equirect' : 'sst-temp-anomaly-equirect';
 
-  const [sstTextureBlob, sstMetadata, sstAnomalyTextureBlob, sstAnomalyMetadata] =
-    await Promise.all([
-      fetch(sstTextureUrl).then(async (res) => {
-        if (!res.ok) throw new Error(`Failed to fetch SST texture: ${res.statusText}`);
-        return res.blob();
-      }),
-      fetch(sstMetadataUrl).then(async (res) => {
-        if (!res.ok) throw new Error(`Failed to fetch SST metadata: ${res.statusText}`);
-        return res.json();
-      }),
-      fetch(sstAnomalyTextureUrl).then(async (res) => {
-        if (!res.ok) throw new Error(`Failed to fetch SST anomaly texture: ${res.statusText}`);
-        return res.blob();
-      }),
-      fetch(sstAnomalyMetadataUrl).then(async (res) => {
-        if (!res.ok) throw new Error(`Failed to fetch SST anomaly metadata: ${res.statusText}`);
-        return res.json();
-      }),
-    ]);
+  const textureUrl = BUCKET_URL + `${prefix}${suffix}.webp`;
+  const metadataUrl = BUCKET_URL + `${prefix}${suffix}-metadata.json`;
 
-  // Create Three.js textures from blobs
-  const sstTextureUrl_obj = URL.createObjectURL(sstTextureBlob);
-  const sstAnomalyTextureUrl_obj = URL.createObjectURL(sstAnomalyTextureBlob);
-
-  const [sstTexture, sstAnomalyTexture] = await Promise.all([
-    textureLoader.loadAsync(sstTextureUrl_obj),
-    textureLoader.loadAsync(sstAnomalyTextureUrl_obj),
+  const [textureBlob, metadata] = await Promise.all([
+    fetch(textureUrl).then(async (res) => {
+      if (!res.ok) throw new Error(`Failed to fetch ${dataset} texture: ${res.statusText}`);
+      return res.blob();
+    }),
+    fetch(metadataUrl).then(async (res) => {
+      if (!res.ok) throw new Error(`Failed to fetch ${dataset} metadata: ${res.statusText}`);
+      return res.json();
+    }),
   ]);
 
-  // Configure textures
-  sstTexture.colorSpace = LinearSRGBColorSpace;
-  sstTexture.userData.objectUrl = sstTextureUrl_obj;
-  sstTexture.userData.date = date;
+  // Create Three.js texture from blob
+  const textureUrl_obj = URL.createObjectURL(textureBlob);
+  const texture = await textureLoader.loadAsync(textureUrl_obj);
 
-  sstAnomalyTexture.colorSpace = LinearSRGBColorSpace;
-  sstAnomalyTexture.userData.objectUrl = sstAnomalyTextureUrl_obj;
-  sstAnomalyTexture.userData.date = date;
+  // Configure texture
+  texture.colorSpace = LinearSRGBColorSpace;
+  texture.userData.objectUrl = textureUrl_obj;
+  texture.userData.date = date;
+  texture.userData.dataset = dataset;
 
   return {
-    sstTexture,
-    sstMetadata,
-    sstAnomalyTexture,
-    sstAnomalyMetadata,
+    texture,
+    metadata,
+  };
+}
+
+/**
+ * Fetch assets for a specific date (LEGACY - fetches both datasets)
+ * Creates Three.js Texture objects immediately to avoid decode during rendering
+ * @param date - Optional date string in YYYY-MM-DD format. If not provided, fetches latest (non-dated) files
+ * @param textureLoader - Three.js TextureLoader instance for loading textures
+ * @deprecated Use fetchDatasetAssets instead to save memory
+ */
+export async function fetchAssetsForDate(date: string | undefined, textureLoader: TextureLoader): Promise<Assets> {
+  const [tempAssets, anomalyAssets] = await Promise.all([
+    fetchDatasetAssets(date, 'Temperature', textureLoader),
+    fetchDatasetAssets(date, 'Temp Anomaly', textureLoader),
+  ]);
+
+  return {
+    sstTexture: tempAssets.texture,
+    sstMetadata: tempAssets.metadata,
+    sstAnomalyTexture: anomalyAssets.texture,
+    sstAnomalyMetadata: anomalyAssets.metadata,
   };
 }
 

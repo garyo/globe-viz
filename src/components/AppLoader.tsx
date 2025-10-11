@@ -25,6 +25,7 @@ export const AppLoader: ParentComponent = (props) => {
       setAppState('currentDateIndex', latestIndex >= 0 ? latestIndex : 0);
 
       // Fetch assets for the latest date
+      // Load both datasets initially to have metadata for colormap
       const latestDate = dateIndex.latest;
       const assets = await fetchAssetsForDate(latestDate, textureLoader);
 
@@ -34,6 +35,9 @@ export const AppLoader: ParentComponent = (props) => {
         sstAnomalyTexture: assets.sstAnomalyTexture,
         sstAnomalyMetadata: assets.sstAnomalyMetadata,
       });
+
+      // Note: After initial load, GlobeScene will handle on-demand loading
+      // of only the current dataset to save memory
       setAppState('isLoading', false);
       setIsLoading(false);
 

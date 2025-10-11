@@ -13,7 +13,7 @@ import {
 } from '../lib/scene/setup';
 import { createCamera, createControls, updateCameraAspect, updateControlsForResize } from '../lib/scene/camera';
 import { createGlobe, updateGlobeTexture } from '../lib/scene/globe';
-import { fetchAssetsForDate } from '../lib/data/assets';
+import { fetchDatasetAssets } from '../lib/data/assets';
 import { TextureCache } from '../lib/data/textureCache';
 import type { WebGLRenderer, Scene, PerspectiveCamera, Mesh, AxesHelper } from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
@@ -33,6 +33,7 @@ export const GlobeScene = () => {
   let animationId: number;
   let textureLoader: ReturnType<typeof createTextureLoader>;
   let errorTimeout: number | undefined;
+  let animationTimeout: number | undefined;
 
   // Texture cache to avoid re-fetching from S3 (max 1 year of dates)
   const textureCache = new TextureCache(365);
@@ -99,6 +100,9 @@ export const GlobeScene = () => {
     if (errorTimeout) {
       clearTimeout(errorTimeout);
     }
+    if (animationTimeout) {
+      clearTimeout(animationTimeout);
+    }
   });
 
   // React to dataset changes
@@ -142,39 +146,50 @@ export const GlobeScene = () => {
     axesHelper.visible = appState.showAxes;
   });
 
-  // React to date changes - load new textures
+  // React to date changes - load new texture for current dataset only
+  // IMPORTANT: Waits for texture to load before scheduling next animation frame
   createEffect(() => {
     // Track reactive values
     const currentDateIndex = appState.currentDateIndex;
     const availableDates = appState.availableDates;
+    const dataset = appState.dataset;
+    const isAnimating = appState.isAnimating;
+    const animationSpeed = appState.animationSpeed;
 
     if (availableDates.length === 0 || !globe || !textureLoader || !renderer) return;
 
     const date = availableDates[currentDateIndex];
     if (!date) return;
 
-    // Load assets for the selected date (check cache first)
+    // Clear any pending animation timeout (in case user manually changed frame)
+    if (animationTimeout) {
+      clearTimeout(animationTimeout);
+      animationTimeout = undefined;
+    }
+
+    // Load assets for the selected date and current dataset (check cache first)
     void (async () => {
       try {
-        let assets = textureCache.get(date);
+        let assets = textureCache.get(date, dataset);
 
         if (!assets) {
-          // Cache miss - fetch from S3 and create textures
-          assets = await fetchAssetsForDate(date, textureLoader);
+          // Cache miss - fetch only current dataset from S3
+          assets = await fetchDatasetAssets(date, dataset, textureLoader);
 
-          // Pre-decode textures on GPU before caching
-          renderer.initTexture(assets.sstTexture);
-          renderer.initTexture(assets.sstAnomalyTexture);
+          // Pre-decode texture on GPU before caching
+          renderer.initTexture(assets.texture);
 
-          textureCache.set(date, assets);
+          textureCache.set(date, dataset, assets);
         }
 
-        setAppState('assets', {
-          sstTexture: assets.sstTexture,
-          sstMetadata: assets.sstMetadata,
-          sstAnomalyTexture: assets.sstAnomalyTexture,
-          sstAnomalyMetadata: assets.sstAnomalyMetadata,
-        });
+        // Update only the current dataset's texture and metadata
+        if (dataset === 'Temperature') {
+          setAppState('assets', 'sstTexture', assets.texture);
+          setAppState('assets', 'sstMetadata', assets.metadata);
+        } else {
+          setAppState('assets', 'sstAnomalyTexture', assets.texture);
+          setAppState('assets', 'sstAnomalyMetadata', assets.metadata);
+        }
 
         // Clear any previous error
         if (errorTimeout) {
@@ -182,8 +197,24 @@ export const GlobeScene = () => {
           errorTimeout = undefined;
         }
         setAppState('missingDateError', null);
+
+        // If animating, schedule next frame AFTER texture loads.
+        // This eliminates race conditions and stuttering
+        if (isAnimating && availableDates.length > 1) {
+          // Check if we're at the last frame - pause for 1 second before looping
+          const isAtEnd = currentDateIndex === availableDates.length - 1;
+          const delay = isAtEnd ? animationSpeed + 1000 : animationSpeed;
+
+          animationTimeout = window.setTimeout(() => {
+            setAppState('currentDateIndex', (prev) => {
+              const next = prev + 1;
+              // Loop back to start
+              return next >= availableDates.length ? 0 : next;
+            });
+          }, delay);
+        }
       } catch (err) {
-        console.error(`Failed to load assets for date ${date}:`, err);
+        console.error(`Failed to load ${dataset} for date ${date}:`, err);
         // Set error state but keep previous texture
         setAppState('missingDateError', `Data unavailable for ${date}`);
         // Don't update assets - keep showing previous date's texture
@@ -195,42 +226,26 @@ export const GlobeScene = () => {
         errorTimeout = window.setTimeout(() => {
           setAppState('missingDateError', null);
         }, 3000);
+
+        // On error, stop animation to avoid infinite loop
+        if (isAnimating) {
+          setAppState('isAnimating', false);
+        }
       }
     })();
   });
 
-  // Animation timer - advance to next date at regular intervals
-  createEffect(() => {
-    const isAnimating = appState.isAnimating;
-    const animationSpeed = appState.animationSpeed;
-    const availableDates = appState.availableDates;
-    const currentIndex = appState.currentDateIndex;
-
-    if (!isAnimating || availableDates.length <= 1) return;
-
-    // Check if we're at the last frame - pause for 1 second before looping
-    const isAtEnd = currentIndex === availableDates.length - 1;
-    const delay = isAtEnd ? animationSpeed + 1000 : animationSpeed;
-
-    const timeout = setTimeout(() => {
-      setAppState('currentDateIndex', (prev) => {
-        const next = prev + 1;
-        // Loop back to start
-        return next >= availableDates.length ? 0 : next;
-      });
-    }, delay);
-
-    // Cleanup timeout when effect re-runs or component unmounts
-    onCleanup(() => {
-      clearTimeout(timeout);
-    });
-  });
+  // Animation is now handled in the texture loading effect above
+  // This ensures each frame waits for its texture to load before advancing
+  // Eliminates race conditions and stuttering at high frame rates
 
   // Pre-load next frame when animating (for smooth playback)
+  // Only pre-fetch current dataset to save memory
   createEffect(() => {
     const isAnimating = appState.isAnimating;
     const currentDateIndex = appState.currentDateIndex;
     const availableDates = appState.availableDates;
+    const dataset = appState.dataset;
 
     if (!isAnimating || availableDates.length <= 1 || !textureLoader || !renderer) return;
 
@@ -240,18 +255,17 @@ export const GlobeScene = () => {
 
     if (!nextDate) return;
 
-    // Pre-load if not already cached
-    if (!textureCache.has(nextDate)) {
+    // Pre-load if not already cached (only for current dataset)
+    if (!textureCache.has(nextDate, dataset)) {
       void (async () => {
         try {
-          const assets = await fetchAssetsForDate(nextDate, textureLoader);
+          const assets = await fetchDatasetAssets(nextDate, dataset, textureLoader);
 
-          // CRITICAL: Pre-decode textures on GPU NOW, before they're needed
+          // CRITICAL: Pre-decode texture on GPU NOW, before it's needed
           // This eliminates decode stutter during animation!
-          renderer.initTexture(assets.sstTexture);
-          renderer.initTexture(assets.sstAnomalyTexture);
+          renderer.initTexture(assets.texture);
 
-          textureCache.set(nextDate, assets);
+          textureCache.set(nextDate, dataset, assets);
         } catch (err) {
           // Silently fail - not critical
         }
