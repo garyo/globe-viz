@@ -36,15 +36,24 @@ export const TopBar = () => {
     return 'Loading...';
   };
 
+  const handleAboutClick = () => {
+    document.dispatchEvent(new CustomEvent('open-about-popup'));
+  };
+
   return (
     <div class="topbar">
       <div>
         <div>Global Sea Surface Temperature</div>
         <div id="topdate">Date: {getDate()}</div>
         <div>
-          <a href="https://github.com/garyo/sea-surface-temp-viz" target="_blank">
-            More Info
-          </a>
+          <button
+            class="about-button"
+            onClick={handleAboutClick}
+            title="About this app"
+            aria-label="About"
+          >
+            About
+          </button>
         </div>
       </div>
       <svg ref={svgRef} id="colormap"></svg>

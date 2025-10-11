@@ -65,6 +65,22 @@ html {
     text-overflow: ellipsis;
 }
 
+.topbar .about-button {
+    padding: 4px 12px;
+    background: rgba(100, 150, 255, 0.2);
+    border: 1px solid rgba(100, 150, 255, 0.4);
+    border-radius: 4px;
+    color: white;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.topbar .about-button:hover {
+    background: rgba(100, 150, 255, 0.4);
+    border-color: rgba(100, 150, 255, 0.6);
+}
+
 .legendCells .label {
     font-size: 10pt;
 }
