@@ -1,11 +1,11 @@
 import { Show, createSignal, onMount } from 'solid-js';
 import { appState, setAppState, saveState, hasMultipleDates } from '../stores/appState';
 import { isMobile } from '../lib/helpers/responsiveness-client';
-import { Slider } from './controls/Slider';
 import { Select } from './controls/Select';
 import { Toggle } from './controls/Toggle';
 import { DateSlider } from './controls/DateSlider';
 import { AnimationControls } from './controls/AnimationControls';
+import { RotationControls } from './controls/RotationControls';
 
 const DATASETS = ['Temperature', 'Temp Anomaly'] as const;
 
@@ -24,8 +24,8 @@ export const ControlPanel = () => {
     saveState();
   };
 
-  const handleAutoRotateChange = (value: boolean) => {
-    setAppState('autoRotate', value);
+  const handleToggleRotate = () => {
+    setAppState('autoRotate', !appState.autoRotate);
     saveState();
   };
 
@@ -109,24 +109,14 @@ export const ControlPanel = () => {
               onSpeedChange={handleAnimationSpeedChange}
             />
 
-            <Toggle
-              label="Auto Rotate"
-              checked={appState.autoRotate}
-              onChange={handleAutoRotateChange}
+            <RotationControls
+              autoRotate={appState.autoRotate}
+              rotateSpeed={appState.autoRotateSpeed}
+              onToggleRotate={handleToggleRotate}
+              onSpeedChange={handleAutoRotateSpeedChange}
             />
 
-            <Show when={appState.autoRotate}>
-              <Slider
-                label="Rotate Speed"
-                value={appState.autoRotateSpeed}
-                min={0}
-                max={5}
-                step={0.1}
-                onChange={handleAutoRotateSpeedChange}
-              />
-            </Show>
-
-            <div class="control-section">
+            <div class="control-section debug-section">
               <button
                 class="control-section-header"
                 onClick={() => setDebugOpen(!debugOpen())}

@@ -421,6 +421,10 @@ h1 {
     border-color: rgba(255, 255, 255, 0.4);
 }
 
+.debug-section {
+    display: none !important;   /* hide this; not needed in production */
+}
+
 .color-picker-wrapper {
     display: flex;
     align-items: center;
@@ -580,6 +584,12 @@ h1 {
 
 /* Animation controls */
 .animation-controls {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+}
+
+.rotation-controls {
     flex-direction: row;
     align-items: center;
     gap: 8px;
