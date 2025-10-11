@@ -34,8 +34,8 @@ export const GlobeScene = () => {
   let textureLoader: ReturnType<typeof createTextureLoader>;
   let errorTimeout: number | undefined;
 
-  // Texture cache to avoid re-fetching from S3 (max 100 dates)
-  const textureCache = new TextureCache(100);
+  // Texture cache to avoid re-fetching from S3 (max 1 year of dates)
+  const textureCache = new TextureCache(365);
 
   onMount(async () => {
     if (!canvasRef || !wrapperRef) return;
