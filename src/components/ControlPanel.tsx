@@ -50,6 +50,11 @@ export const ControlPanel = () => {
   };
 
   const handleToggleAnimation = () => {
+    // If starting to play from the last frame, jump to beginning immediately
+    if (!appState.isAnimating &&
+        appState.currentDateIndex === appState.availableDates.length - 1) {
+      setAppState('currentDateIndex', 0);
+    }
     setAppState('isAnimating', !appState.isAnimating);
   };
 
