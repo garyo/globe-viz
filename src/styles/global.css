@@ -529,7 +529,7 @@ h1 {
     position: absolute;
     top: 0.5rem;
     right: 0.5rem;
-    z-index: 5;
+    z-index: 20;
     background: rgba(0, 0, 0, 0.7);
     color: white;
     border: 1px solid #333;
