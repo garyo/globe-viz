@@ -74,7 +74,7 @@ const initialState: AppState = {
   availableDates: [],
   currentDateIndex: 0,
   isAnimating: false,
-  animationSpeed: 500, // 500ms between frames (2 fps)
+  animationSpeed: 100, // 100ms between frames (10 fps)
   isLoading: true,
   missingDateError: null,
   mobileMenuOpen: false,
