@@ -107,5 +107,15 @@ export async function fetchAssetsForDate(date: string | undefined, textureLoader
  * Fetch the latest assets (backward compatibility)
  */
 export async function fetchAssets(textureLoader: TextureLoader): Promise<Assets> {
-  return fetchAssetsForDate(undefined, textureLoader);
+  const [tempAssets, anomalyAssets] = await Promise.all([
+    fetchDatasetAssets(undefined, 'Temperature', textureLoader),
+    fetchDatasetAssets(undefined, 'Temp Anomaly', textureLoader),
+  ]);
+
+  return {
+    sstTexture: tempAssets.texture,
+    sstMetadata: tempAssets.metadata,
+    sstAnomalyTexture: anomalyAssets.texture,
+    sstAnomalyMetadata: anomalyAssets.metadata,
+  };
 }

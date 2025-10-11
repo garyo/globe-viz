@@ -9,11 +9,25 @@
  * IMPORTANT: Call only from client-side contexts (onMount, effects, event handlers)
  */
 export function isMobile(): boolean {
-  // @ts-ignore - navigator.vendor is deprecated but still needed for device detection
-  const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera || ''
+  const ua = navigator.userAgent ?? ''
+  const uaLower = ua.toLowerCase()
   const mobileRegex = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i
 
-  const userAgentMobile = mobileRegex.test(userAgent.toLowerCase())
+  const navWithUAData = navigator as Navigator & {
+    userAgentData?: {
+      mobile?: boolean
+      brands?: Array<{ brand: string }>
+    }
+  }
+
+  const uaDataMobile =
+    navWithUAData.userAgentData?.mobile ??
+    navWithUAData.userAgentData?.brands?.some((brand) =>
+      /android|iphone|ipad|ipod/.test(brand.brand.toLowerCase())
+    ) ??
+    false
+
+  const userAgentMobile = mobileRegex.test(uaLower) || uaDataMobile
   const screenMobile = window.innerWidth <= 768
   const touchSupport = 'ontouchstart' in window || navigator.maxTouchPoints > 0
 
@@ -41,19 +55,20 @@ export function getViewportDimensions() {
  */
 export function isTablet(): boolean {
   const viewport = getViewportDimensions()
-  const userAgent = navigator.userAgent.toLowerCase()
+  const uaLower = navigator.userAgent.toLowerCase()
+  const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 1
 
-  // @ts-ignore - navigator.platform is deprecated but still needed for iPad detection
-  const isIPad = /ipad/.test(userAgent) ||
-                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  const isIPad =
+    /ipad/.test(uaLower) ||
+    (navigator.userAgent.includes('Macintosh') && hasTouch)
 
-  const isAndroidTablet = /android/.test(userAgent) &&
+  const isAndroidTablet = /android/.test(uaLower) &&
                           viewport.width >= 600 &&
-                          !/mobile/.test(userAgent)
+                          !/mobile/.test(uaLower)
 
   const isTabletSize = viewport.width >= 600 && viewport.width <= 1024
 
-  return isIPad || isAndroidTablet || (isTabletSize && 'ontouchstart' in window)
+  return isIPad || isAndroidTablet || (isTabletSize && hasTouch)
 }
 
 /**

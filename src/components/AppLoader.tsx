@@ -1,6 +1,6 @@
 import { createSignal, onMount, onCleanup, Show, type ParentComponent } from 'solid-js';
 import { setAppState, appState } from '../stores/appState';
-import { fetchDateIndex, fetchAssetsForDate } from '../lib/data/assets';
+import { fetchDateIndex, fetchDatasetAssets } from '../lib/data/assets';
 import { TextureLoader } from 'three';
 
 export const AppLoader: ParentComponent = (props) => {
@@ -27,13 +27,16 @@ export const AppLoader: ParentComponent = (props) => {
       // Fetch assets for the latest date
       // Load both datasets initially to have metadata for colormap
       const latestDate = dateIndex.latest;
-      const assets = await fetchAssetsForDate(latestDate, textureLoader);
+      const [tempAssets, anomalyAssets] = await Promise.all([
+        fetchDatasetAssets(latestDate, 'Temperature', textureLoader),
+        fetchDatasetAssets(latestDate, 'Temp Anomaly', textureLoader),
+      ]);
 
       setAppState('assets', {
-        sstTexture: assets.sstTexture,
-        sstMetadata: assets.sstMetadata,
-        sstAnomalyTexture: assets.sstAnomalyTexture,
-        sstAnomalyMetadata: assets.sstAnomalyMetadata,
+        sstTexture: tempAssets.texture,
+        sstMetadata: tempAssets.metadata,
+        sstAnomalyTexture: anomalyAssets.texture,
+        sstAnomalyMetadata: anomalyAssets.metadata,
       });
 
       // Note: After initial load, GlobeScene will handle on-demand loading
