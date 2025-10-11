@@ -33,9 +33,9 @@ export async function fetchAssetsForDate(date?: string): Promise<Assets> {
   // If date is provided, use date-prefixed filenames
   const prefix = date ? `${date}-` : '';
 
-  const sstTextureUrl = BUCKET_URL + `${prefix}sst-temp-equirect.png`;
+  const sstTextureUrl = BUCKET_URL + `${prefix}sst-temp-equirect.webp`;
   const sstMetadataUrl = BUCKET_URL + `${prefix}sst-temp-equirect-metadata.json`;
-  const sstAnomalyTextureUrl = BUCKET_URL + `${prefix}sst-temp-anomaly-equirect.png`;
+  const sstAnomalyTextureUrl = BUCKET_URL + `${prefix}sst-temp-anomaly-equirect.webp`;
   const sstAnomalyMetadataUrl = BUCKET_URL + `${prefix}sst-temp-anomaly-equirect-metadata.json`;
 
   const [sstTextureResult, sstMetadataResult, sstAnomalyTextureResult, sstAnomalyMetadataResult] =
