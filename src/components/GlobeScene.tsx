@@ -34,6 +34,8 @@ export const GlobeScene = () => {
   let textureLoader: ReturnType<typeof createTextureLoader>;
   let errorTimeout: number | undefined;
   let animationTimeout: number | undefined;
+  let cleanupFullscreen: (() => void) | undefined;
+  let cleanupResize: (() => void) | undefined;
 
   // Texture cache to avoid re-fetching from S3 (max 1 year of dates)
   const textureCache = new TextureCache(365);
@@ -78,10 +80,10 @@ export const GlobeScene = () => {
     }
 
     // Fullscreen on double-click or double-tap
-    setupFullscreenHandlers();
+    cleanupFullscreen = setupFullscreenHandlers();
 
     // Handle window resize
-    setupResizeHandler();
+    cleanupResize = setupResizeHandler();
 
     // Start animation loop
     animate();
@@ -103,6 +105,13 @@ export const GlobeScene = () => {
     if (animationTimeout) {
       clearTimeout(animationTimeout);
     }
+    if (cleanupFullscreen) {
+      cleanupFullscreen();
+    }
+    if (cleanupResize) {
+      cleanupResize();
+    }
+    textureCache.clear();
   });
 
   // React to dataset changes
@@ -113,7 +122,7 @@ export const GlobeScene = () => {
     const sstAnomalyTexture = appState.assets.sstAnomalyTexture;
 
     // Now we can do conditional checks
-    if (!globe || !sstTexture) return;
+    if (!globe) return;
 
     const dataTexture = dataset === 'Temperature' ? sstTexture : sstAnomalyTexture;
 
@@ -160,6 +169,21 @@ export const GlobeScene = () => {
 
     const date = availableDates[currentDateIndex];
     if (!date) return;
+
+    // Seed cache with preloaded assets from initial AppLoader fetch
+    if (!textureCache.has(date, dataset)) {
+      const preloadedTexture =
+        dataset === 'Temperature' ? appState.assets.sstTexture : appState.assets.sstAnomalyTexture;
+      const preloadedMetadata =
+        dataset === 'Temperature' ? appState.assets.sstMetadata : appState.assets.sstAnomalyMetadata;
+
+      if (preloadedTexture && preloadedMetadata?.date === date) {
+        textureCache.set(date, dataset, {
+          texture: preloadedTexture,
+          metadata: preloadedMetadata,
+        });
+      }
+    }
 
     // Clear any pending animation timeout (in case user manually changed frame)
     if (animationTimeout) {
@@ -292,13 +316,13 @@ export const GlobeScene = () => {
 
     let lastTouchTime = 0;
 
-    window.addEventListener('dblclick', (event) => {
+    const handleDoubleClick = (event: MouseEvent) => {
       if (event.target === canvasRef) {
         toggleFullScreen(canvasRef!);
       }
-    });
+    };
 
-    canvasRef.addEventListener('touchend', (event) => {
+    const handleTouchEnd = (event: TouchEvent) => {
       const currentTime = new Date().getTime();
       const tapLength = currentTime - lastTouchTime;
       if (tapLength < 500 && tapLength > 0) {
@@ -306,7 +330,15 @@ export const GlobeScene = () => {
         toggleFullScreen(canvasRef!);
       }
       lastTouchTime = currentTime;
-    });
+    };
+
+    window.addEventListener('dblclick', handleDoubleClick);
+    canvasRef.addEventListener('touchend', handleTouchEnd);
+
+    return () => {
+      window.removeEventListener('dblclick', handleDoubleClick);
+      canvasRef?.removeEventListener('touchend', handleTouchEnd);
+    };
   }
 
   function setupResizeHandler() {
@@ -317,10 +349,17 @@ export const GlobeScene = () => {
       }
     }, 150);
 
-    window.addEventListener('resize', handleResize);
-    window.addEventListener('orientationchange', () => {
+    const handleOrientationChange = () => {
       setTimeout(handleResize, 200);
-    });
+    };
+
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleOrientationChange);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleOrientationChange);
+    };
   }
 
   return (
