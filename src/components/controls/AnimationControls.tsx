@@ -1,21 +1,27 @@
-import { Show } from 'solid-js';
+import { Show, createMemo, createSignal } from 'solid-js';
 
 interface AnimationControlsProps {
   isAnimating: boolean;
-  animationSpeed: number;
+  animationSpeed: number; // in milliseconds
   hasMultipleDates: boolean;
   onToggleAnimation: () => void;
-  onSpeedChange: (speed: number) => void;
+  onSpeedChange: (speed: number) => void; // expects milliseconds
 }
 
-const SPEED_OPTIONS = [
-  { label: 'Slow', value: 1000 },
-  { label: 'Medium', value: 500 },
-  { label: 'Fast', value: 200 },
-  { label: 'Very Fast', value: 100 },
-];
-
 export const AnimationControls = (props: AnimationControlsProps) => {
+  // Convert milliseconds to FPS for initial value
+  const fps = createMemo(() => 1000 / props.animationSpeed);
+
+  // Track the slider value to avoid display precision loss from ms conversion
+  const [displayFps, setDisplayFps] = createSignal(fps());
+
+  const handleFpsChange = (newFps: number) => {
+    setDisplayFps(newFps);
+    // Convert FPS back to milliseconds
+    const ms = Math.round(1000 / newFps);
+    props.onSpeedChange(ms);
+  };
+
   return (
     <Show when={props.hasMultipleDates}>
       <div class="control-row animation-controls">
@@ -28,16 +34,17 @@ export const AnimationControls = (props: AnimationControlsProps) => {
         </button>
 
         <label class="control-label inline">
-          <span>Speed</span>
-          <select
-            class="control-select"
-            value={props.animationSpeed}
-            onChange={(e) => props.onSpeedChange(parseInt(e.currentTarget.value))}
-          >
-            {SPEED_OPTIONS.map(option => (
-              <option value={option.value}>{option.label}</option>
-            ))}
-          </select>
+          <span>Speed: {displayFps().toFixed(1)} fps</span>
+          <input
+            type="range"
+            class="control-slider"
+            min={1}
+            max={30}
+            step={0.5}
+            value={displayFps()}
+            onInput={(e) => handleFpsChange(parseFloat(e.currentTarget.value))}
+            style={{ flex: '1' }}
+          />
         </label>
       </div>
     </Show>

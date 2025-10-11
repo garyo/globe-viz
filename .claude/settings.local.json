@@ -5,7 +5,8 @@
       "Bash(bun:*)",
       "Bash(npx astro build:*)",
       "Read(//Users/garyo/src/sea-surface-temp-viz/**)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Read(//Users/garyo/src/deep-timeline/**)"
     ],
     "deny": [],
     "ask": []
