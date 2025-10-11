@@ -3,7 +3,9 @@
     "allow": [
       "Bash(bun add:*)",
       "Bash(bun:*)",
-      "Bash(npx astro build:*)"
+      "Bash(npx astro build:*)",
+      "Read(//Users/garyo/src/sea-surface-temp-viz/**)",
+      "Bash(chmod:*)"
     ],
     "deny": [],
     "ask": []

@@ -1,14 +1,29 @@
-import { createSignal, onMount, Show, type ParentComponent } from 'solid-js';
-import { setAppState } from '../stores/appState';
-import { fetchAssets } from '../lib/data/assets';
+import { createSignal, onMount, onCleanup, Show, type ParentComponent } from 'solid-js';
+import { setAppState, appState } from '../stores/appState';
+import { fetchDateIndex, fetchAssetsForDate } from '../lib/data/assets';
 
 export const AppLoader: ParentComponent = (props) => {
   const [isLoading, setIsLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
+  let refreshInterval: number | undefined;
+  let visibilityHandler: (() => void) | undefined;
 
   onMount(async () => {
     try {
-      const assets = await fetchAssets();
+      // First, fetch the index of available dates
+      const dateIndex = await fetchDateIndex();
+
+      // Set the available dates in app state
+      setAppState('availableDates', dateIndex.dates);
+
+      // Set current date to the latest (last in the array)
+      const latestIndex = dateIndex.dates.length - 1;
+      setAppState('currentDateIndex', latestIndex >= 0 ? latestIndex : 0);
+
+      // Fetch assets for the latest date
+      const latestDate = dateIndex.latest;
+      const assets = await fetchAssetsForDate(latestDate);
+
       setAppState('assets', {
         sstTexture: assets.sstTexture,
         sstMetadata: assets.sstMetadata,
@@ -23,10 +38,55 @@ export const AppLoader: ParentComponent = (props) => {
       if (loadingEl) {
         loadingEl.setAttribute('hidden', 'true');
       }
+
+      // Function to refresh the date index
+      const refreshIndex = async () => {
+        try {
+          console.log('Refreshing date index...');
+          const newDateIndex = await fetchDateIndex();
+
+          // Only update if we have new dates
+          if (newDateIndex.dates.length > appState.availableDates.length) {
+            console.log(`Found ${newDateIndex.dates.length - appState.availableDates.length} new date(s)`);
+            setAppState('availableDates', newDateIndex.dates);
+
+            // If we're at the end of the list, move to the new latest
+            if (appState.currentDateIndex === appState.availableDates.length - 1) {
+              setAppState('currentDateIndex', newDateIndex.dates.length - 1);
+            }
+          }
+        } catch (err) {
+          console.error('Failed to refresh date index:', err);
+          // Don't show error to user, just log it
+        }
+      };
+
+      // Set up periodic index refresh (every hour)
+      refreshInterval = window.setInterval(refreshIndex, 3600000); // 1 hour in milliseconds
+
+      // Refresh when tab becomes visible
+      visibilityHandler = () => {
+        if (!document.hidden) {
+          console.log('Tab became visible, refreshing index...');
+          void refreshIndex();
+        }
+      };
+      document.addEventListener('visibilitychange', visibilityHandler);
+
     } catch (err) {
       console.error('Failed to load assets:', err);
       setError('Failed to load sea surface temperature data. Please refresh the page to try again.');
       setIsLoading(false);
+    }
+  });
+
+  // Clean up on unmount
+  onCleanup(() => {
+    if (refreshInterval) {
+      clearInterval(refreshInterval);
+    }
+    if (visibilityHandler) {
+      document.removeEventListener('visibilitychange', visibilityHandler);
     }
   });
 

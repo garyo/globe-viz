@@ -34,8 +34,15 @@ export interface AppState {
     sstAnomalyMetadata: Metadata;
   };
 
+  // Date/time navigation
+  availableDates: string[];  // Array of 'YYYY-MM-DD' strings
+  currentDateIndex: number;  // Index into availableDates array
+  isAnimating: boolean;      // Whether animation is playing
+  animationSpeed: number;    // Animation speed in milliseconds between frames
+
   // Loading state
   isLoading: boolean;
+  missingDateError: string | null;  // Error message if current date data is missing
 
   // Mobile UI
   mobileMenuOpen: boolean;
@@ -64,7 +71,12 @@ const initialState: AppState = {
     sstAnomalyTexture: null,
     sstAnomalyMetadata: { ...defaultMetadata },
   },
+  availableDates: [],
+  currentDateIndex: 0,
+  isAnimating: false,
+  animationSpeed: 500, // 500ms between frames (2 fps)
   isLoading: true,
+  missingDateError: null,
   mobileMenuOpen: false,
 };
 
@@ -135,4 +147,16 @@ export function saveState() {
 // Helper to convert hex color to Three.js Color
 export function getLandColorAsThreeColor(): Color {
   return new Color(appState.landColor);
+}
+
+// Helper to get the current selected date
+export function getCurrentDate(): string | undefined {
+  const { availableDates, currentDateIndex } = appState;
+  if (availableDates.length === 0) return undefined;
+  return availableDates[currentDateIndex];
+}
+
+// Helper to check if we have multiple dates available
+export function hasMultipleDates(): boolean {
+  return appState.availableDates.length > 1;
 }

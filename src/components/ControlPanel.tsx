@@ -1,15 +1,17 @@
 import { Show, createSignal, onMount } from 'solid-js';
-import { appState, setAppState, saveState } from '../stores/appState';
+import { appState, setAppState, saveState, hasMultipleDates } from '../stores/appState';
 import { isMobile } from '../lib/helpers/responsiveness-client';
 import { Slider } from './controls/Slider';
 import { Select } from './controls/Select';
 import { Toggle } from './controls/Toggle';
+import { DateSlider } from './controls/DateSlider';
+import { AnimationControls } from './controls/AnimationControls';
 
 const DATASETS = ['Temperature', 'Temp Anomaly'] as const;
 
 export const ControlPanel = () => {
   const [debugOpen, setDebugOpen] = createSignal(false);
-  const [menuVisible, setMenuVisible] = createSignal(false);
+  const [menuVisible, setMenuVisible] = createSignal(true);
   const [mobile, setMobile] = createSignal(false);
 
   // Detect mobile on mount (client-side only)
@@ -20,9 +22,6 @@ export const ControlPanel = () => {
   const handleDatasetChange = (value: typeof appState.dataset) => {
     setAppState('dataset', value);
     saveState();
-    if (mobile()) {
-      setMenuVisible(false);
-    }
   };
 
   const handleAutoRotateChange = (value: boolean) => {
@@ -42,6 +41,20 @@ export const ControlPanel = () => {
 
   const handleShowAxesChange = (value: boolean) => {
     setAppState('showAxes', value);
+    saveState();
+  };
+
+  const handleDateChange = (index: number) => {
+    setAppState('currentDateIndex', index);
+    // Don't save to localStorage - let user navigate freely during session
+  };
+
+  const handleToggleAnimation = () => {
+    setAppState('isAnimating', !appState.isAnimating);
+  };
+
+  const handleAnimationSpeedChange = (speed: number) => {
+    setAppState('animationSpeed', speed);
     saveState();
   };
 
@@ -74,6 +87,21 @@ export const ControlPanel = () => {
               value={appState.dataset}
               options={DATASETS}
               onChange={handleDatasetChange}
+            />
+
+            <DateSlider
+              dates={appState.availableDates}
+              currentIndex={appState.currentDateIndex}
+              onDateChange={handleDateChange}
+              disabled={appState.isLoading}
+            />
+
+            <AnimationControls
+              isAnimating={appState.isAnimating}
+              animationSpeed={appState.animationSpeed}
+              hasMultipleDates={hasMultipleDates()}
+              onToggleAnimation={handleToggleAnimation}
+              onSpeedChange={handleAnimationSpeedChange}
             />
 
             <Toggle

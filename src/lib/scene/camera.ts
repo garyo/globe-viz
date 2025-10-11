@@ -4,7 +4,7 @@ import { isMobile, getViewportDimensions } from '../helpers/responsiveness-clien
 
 export function createCamera(canvas: HTMLCanvasElement): PerspectiveCamera {
   const camera = new PerspectiveCamera(
-    50,
+    40,
     canvas.clientWidth / canvas.clientHeight,
     0.1,
     100

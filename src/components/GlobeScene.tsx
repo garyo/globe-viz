@@ -1,5 +1,5 @@
-import { onMount, onCleanup, createEffect } from 'solid-js';
-import { appState } from '../stores/appState';
+import { onMount, onCleanup, createEffect, Show } from 'solid-js';
+import { appState, setAppState, getCurrentDate } from '../stores/appState';
 import { toggleFullScreen } from '../lib/helpers/fullscreen';
 import { createResizeHandler } from '../lib/helpers/responsiveness-client';
 import {
@@ -13,6 +13,8 @@ import {
 } from '../lib/scene/setup';
 import { createCamera, createControls, updateCameraAspect, updateControlsForResize } from '../lib/scene/camera';
 import { createGlobe, updateGlobeTexture } from '../lib/scene/globe';
+import { fetchAssetsForDate } from '../lib/data/assets';
+import { TextureCache } from '../lib/data/textureCache';
 import type { WebGLRenderer, Scene, PerspectiveCamera, Mesh, AxesHelper } from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import type Stats from 'three/examples/jsm/libs/stats.module';
@@ -30,6 +32,10 @@ export const GlobeScene = () => {
   let stats: Stats;
   let animationId: number;
   let textureLoader: ReturnType<typeof createTextureLoader>;
+  let errorTimeout: number | undefined;
+
+  // Texture cache to avoid re-fetching from S3 (max 100 dates)
+  const textureCache = new TextureCache(100);
 
   onMount(async () => {
     if (!canvasRef || !wrapperRef) return;
@@ -90,6 +96,9 @@ export const GlobeScene = () => {
     if (controls) {
       controls.dispose();
     }
+    if (errorTimeout) {
+      clearTimeout(errorTimeout);
+    }
   });
 
   // React to dataset changes
@@ -131,6 +140,112 @@ export const GlobeScene = () => {
   createEffect(() => {
     if (!axesHelper) return;
     axesHelper.visible = appState.showAxes;
+  });
+
+  // React to date changes - load new textures
+  createEffect(() => {
+    // Track reactive values
+    const currentDateIndex = appState.currentDateIndex;
+    const availableDates = appState.availableDates;
+
+    if (availableDates.length === 0 || !globe || !textureLoader) return;
+
+    const date = availableDates[currentDateIndex];
+    if (!date) return;
+
+    // Load assets for the selected date (check cache first)
+    void (async () => {
+      try {
+        let assets = textureCache.get(date);
+
+        if (!assets) {
+          // Cache miss - fetch from S3
+          assets = await fetchAssetsForDate(date);
+          textureCache.set(date, assets);
+        }
+
+        setAppState('assets', {
+          sstTexture: assets.sstTexture,
+          sstMetadata: assets.sstMetadata,
+          sstAnomalyTexture: assets.sstAnomalyTexture,
+          sstAnomalyMetadata: assets.sstAnomalyMetadata,
+        });
+
+        // Clear any previous error
+        if (errorTimeout) {
+          clearTimeout(errorTimeout);
+          errorTimeout = undefined;
+        }
+        setAppState('missingDateError', null);
+      } catch (err) {
+        console.error(`Failed to load assets for date ${date}:`, err);
+        // Set error state but keep previous texture
+        setAppState('missingDateError', `Data unavailable for ${date}`);
+        // Don't update assets - keep showing previous date's texture
+
+        // Auto-clear the error after 3 seconds
+        if (errorTimeout) {
+          clearTimeout(errorTimeout);
+        }
+        errorTimeout = window.setTimeout(() => {
+          setAppState('missingDateError', null);
+        }, 3000);
+      }
+    })();
+  });
+
+  // Animation timer - advance to next date at regular intervals
+  createEffect(() => {
+    const isAnimating = appState.isAnimating;
+    const animationSpeed = appState.animationSpeed;
+    const availableDates = appState.availableDates;
+    const currentIndex = appState.currentDateIndex;
+
+    if (!isAnimating || availableDates.length <= 1) return;
+
+    // Check if we're at the last frame - pause for 1 second before looping
+    const isAtEnd = currentIndex === availableDates.length - 1;
+    const delay = isAtEnd ? animationSpeed + 1000 : animationSpeed;
+
+    const timeout = setTimeout(() => {
+      setAppState('currentDateIndex', (prev) => {
+        const next = prev + 1;
+        // Loop back to start
+        return next >= availableDates.length ? 0 : next;
+      });
+    }, delay);
+
+    // Cleanup timeout when effect re-runs or component unmounts
+    onCleanup(() => {
+      clearTimeout(timeout);
+    });
+  });
+
+  // Pre-load next frame when animating (for smooth playback)
+  createEffect(() => {
+    const isAnimating = appState.isAnimating;
+    const currentDateIndex = appState.currentDateIndex;
+    const availableDates = appState.availableDates;
+
+    if (!isAnimating || availableDates.length <= 1) return;
+
+    // Calculate next date index
+    const nextIndex = (currentDateIndex + 1) % availableDates.length;
+    const nextDate = availableDates[nextIndex];
+
+    if (!nextDate) return;
+
+    // Pre-load if not already cached
+    if (!textureCache.has(nextDate)) {
+      void (async () => {
+        try {
+          const assets = await fetchAssetsForDate(nextDate);
+          textureCache.set(nextDate, assets);
+        } catch (err) {
+          // Silently fail - not critical
+        }
+      })();
+    }
   });
 
   function animate() {
@@ -186,6 +301,11 @@ export const GlobeScene = () => {
   return (
     <div ref={wrapperRef} id="scene-wrapper">
       <canvas ref={canvasRef} id="scene"></canvas>
+      <Show when={appState.missingDateError}>
+        <div class="missing-date-indicator">
+          ⚠️ {appState.missingDateError}
+        </div>
+      </Show>
     </div>
   );
 };
