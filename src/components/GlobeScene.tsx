@@ -1,5 +1,5 @@
 import { onMount, onCleanup, createEffect, Show } from 'solid-js';
-import { appState, setAppState, getCurrentDate } from '../stores/appState';
+import { appState, setAppState } from '../stores/appState';
 import { toggleFullScreen } from '../lib/helpers/fullscreen';
 import { createResizeHandler } from '../lib/helpers/responsiveness-client';
 import {

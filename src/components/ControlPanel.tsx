@@ -12,7 +12,7 @@ const DATASETS = ['Temperature', 'Temp Anomaly'] as const;
 export const ControlPanel = () => {
   const [debugOpen, setDebugOpen] = createSignal(false);
   const [menuVisible, setMenuVisible] = createSignal(true);
-  const [mobile, setMobile] = createSignal(false);
+  const [_, setMobile] = createSignal(false);
 
   // Detect mobile on mount (client-side only)
   onMount(() => {

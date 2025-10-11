@@ -16,11 +16,6 @@ const SPEED_OPTIONS = [
 ];
 
 export const AnimationControls = (props: AnimationControlsProps) => {
-  const getSpeedLabel = () => {
-    const option = SPEED_OPTIONS.find(opt => opt.value === props.animationSpeed);
-    return option?.label || 'Medium';
-  };
-
   return (
     <Show when={props.hasMultipleDates}>
       <div class="control-row animation-controls">
