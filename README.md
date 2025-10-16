@@ -83,6 +83,21 @@ Preview production build
 bun run preview
 ```
 
+## Regenerating the Open Graph Image
+
+To rebuild the social-share asset (`public/og-image-20251011.jpg`), run:
+
+```bash
+magick public/og-src.png -resize '1200x630^' -gravity center -extent 1200x630 -modulate 110,90,100 -gamma 0.9 \
+  \( -size 1200x630 gradient:'#0b122060-#13254b60' \) -gravity center -compose multiply -composite \
+  \( -size 1200x420 gradient:'#0b1220d0-#0b122000' \) -gravity north -compose over -composite \
+  -font 'Helvetica-Bold' -pointsize 72 -fill '#38bdf8' -gravity north -annotate +0+120 'Global Sea Surface Temperature' \
+  -font 'Helvetica' -pointsize 36 -fill '#f8fafc' -interline-spacing 10 -gravity center -annotate +0+80 "Interactive 3D globe using NASA OISST data\nExplore daily trends and anomaly patterns." \
+  public/og-image-20251011.jpg
+```
+
+Copy the current screenshot to `public/og-src.png` before running the command. Ensure ImageMagick and the `Helvetica` font are available on your system.
+
 ## Adding New Controls
 
 To add a new control (e.g., a slider):
