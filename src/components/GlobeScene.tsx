@@ -40,6 +40,9 @@ export const GlobeScene = () => {
   // Texture cache to avoid re-fetching from S3 (max 1 year of dates)
   const textureCache = new TextureCache(365);
 
+  // Track the most recently requested date to avoid displaying stale loads
+  let currentLoadRequestId = 0;
+
   onMount(async () => {
     if (!canvasRef || !wrapperRef) return;
 
@@ -192,6 +195,9 @@ export const GlobeScene = () => {
     }
 
     // Load assets for the selected date and current dataset (check cache first)
+    // Increment request ID to track the most recent request
+    const requestId = ++currentLoadRequestId;
+
     void (async () => {
       try {
         let assets = textureCache.get(date, dataset);
@@ -204,6 +210,13 @@ export const GlobeScene = () => {
           renderer.initTexture(assets.texture);
 
           textureCache.set(date, dataset, assets);
+        }
+
+        // Only update display if this is still the most recent request
+        // This prevents stale loads from updating the display during rapid slider dragging
+        if (requestId !== currentLoadRequestId) {
+          console.log(`Skipping stale load for ${date} (request ${requestId} vs current ${currentLoadRequestId})`);
+          return;
         }
 
         // Update only the current dataset's texture and metadata
@@ -225,17 +238,57 @@ export const GlobeScene = () => {
         // If animating, schedule next frame AFTER texture loads.
         // This eliminates race conditions and stuttering
         if (isAnimating && availableDates.length > 1) {
-          // Check if we're at the last frame - pause for 1 second before looping
-          const isAtEnd = currentDateIndex === availableDates.length - 1;
-          const delay = isAtEnd ? animationSpeed + 1000 : animationSpeed;
+          // Calculate next frame index
+          const nextIndex = (currentDateIndex + 1) % availableDates.length;
+          const nextDate = availableDates[nextIndex];
 
-          animationTimeout = window.setTimeout(() => {
+          // Function to advance to next frame
+          const advanceFrame = () => {
             setAppState('currentDateIndex', (prev) => {
               const next = prev + 1;
-              // Loop back to start
               return next >= availableDates.length ? 0 : next;
             });
-          }, delay);
+          };
+
+          // Check if we're at the last frame - pause for 1 second before looping
+          const isAtEnd = currentDateIndex === availableDates.length - 1;
+          const baseDelay = isAtEnd ? animationSpeed + 1000 : animationSpeed;
+
+          // Check if next frame is already cached
+          if (textureCache.has(nextDate, dataset)) {
+            // Next frame is ready, advance after normal delay
+            animationTimeout = window.setTimeout(advanceFrame, baseDelay);
+          } else {
+            // Next frame not ready yet - wait for it to load before advancing
+            // This prevents jittery animation when cache is cold
+            const checkNextFrame = async () => {
+              try {
+                // Wait for next frame to be fetched and cached
+                let attempts = 0;
+                const maxAttempts = 100; // 10 seconds max wait
+                while (!textureCache.has(nextDate, dataset) && attempts < maxAttempts) {
+                  await new Promise(resolve => setTimeout(resolve, 100));
+                  attempts++;
+                }
+
+                // If we got the frame or timed out, advance
+                if (appState.isAnimating) {
+                  advanceFrame();
+                }
+              } catch (err) {
+                console.error('Error waiting for next frame:', err);
+                // Advance anyway to avoid getting stuck
+                if (appState.isAnimating) {
+                  advanceFrame();
+                }
+              }
+            };
+
+            // Start checking after the base delay
+            animationTimeout = window.setTimeout(() => {
+              void checkNextFrame();
+            }, baseDelay);
+          }
         }
       } catch (err) {
         console.error(`Failed to load ${dataset} for date ${date}:`, err);
