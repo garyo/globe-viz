@@ -15,6 +15,7 @@ import { createCamera, createControls, updateCameraAspect, updateControlsForResi
 import { createGlobe, updateGlobeTexture } from '../lib/scene/globe';
 import { fetchDatasetAssets } from '../lib/data/assets';
 import { TextureCache } from '../lib/data/textureCache';
+import { Spherical, Vector3 } from 'three';
 import type { WebGLRenderer, Scene, PerspectiveCamera, Mesh, AxesHelper } from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import type Stats from 'three/examples/jsm/libs/stats.module';
@@ -36,6 +37,7 @@ export const GlobeScene = () => {
   let animationTimeout: number | undefined;
   let cleanupFullscreen: (() => void) | undefined;
   let cleanupResize: (() => void) | undefined;
+  let cleanupWheelRotate: (() => void) | undefined;
 
   // Texture cache to avoid re-fetching from S3 (max a couple of years)
   const textureCache = new TextureCache(366*2);
@@ -88,6 +90,9 @@ export const GlobeScene = () => {
     // Handle window resize
     cleanupResize = setupResizeHandler();
 
+    // Handle horizontal scroll wheel rotation
+    cleanupWheelRotate = setupWheelRotation();
+
     // Start animation loop
     animate();
   });
@@ -113,6 +118,9 @@ export const GlobeScene = () => {
     }
     if (cleanupResize) {
       cleanupResize();
+    }
+    if (cleanupWheelRotate) {
+      cleanupWheelRotate();
     }
     textureCache.clear();
   });
@@ -412,6 +420,49 @@ export const GlobeScene = () => {
     return () => {
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('orientationchange', handleOrientationChange);
+    };
+  }
+
+  function setupWheelRotation() {
+    if (!canvasRef) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      // Only handle horizontal scroll (deltaX)
+      if (Math.abs(e.deltaX) < 1) return;
+
+      // Rotate the camera around the globe
+      if (controls) {
+        // Prevent default horizontal scroll
+        e.preventDefault();
+
+        // Adjust azimuthal angle (rotation around vertical axis)
+        // Positive deltaX = scroll right = rotate globe right (camera moves left)
+        // Scale the rotation speed (geared down for smooth control)
+        const rotationSpeed = 0.001;
+        const rotationAmount = -e.deltaX * rotationSpeed;
+
+        // Get current spherical coordinates
+        const spherical = new Spherical();
+        spherical.setFromVector3(camera.position.clone().sub(controls.target));
+
+        // Adjust azimuthal angle (theta)
+        spherical.theta += rotationAmount;
+
+        // Convert back to Cartesian and update camera
+        const newPosition = new Vector3();
+        newPosition.setFromSpherical(spherical);
+        newPosition.add(controls.target);
+
+        camera.position.copy(newPosition);
+        camera.lookAt(controls.target);
+        controls.update();
+      }
+    };
+
+    canvasRef.addEventListener('wheel', handleWheel, { passive: false });
+
+    return () => {
+      canvasRef?.removeEventListener('wheel', handleWheel);
     };
   }
 
