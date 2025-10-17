@@ -6,6 +6,7 @@ import { Toggle } from './controls/Toggle';
 import { DateSlider } from './controls/DateSlider';
 import { AnimationControls } from './controls/AnimationControls';
 import { RotationControls } from './controls/RotationControls';
+import { QuickDateSlider } from './controls/QuickDateSlider';
 
 const DATASETS = ['Temperature', 'Temp Anomaly'] as const;
 
@@ -155,6 +156,17 @@ export const ControlPanel = () => {
             </button>
         </div>
       </div>
+
+      <QuickDateSlider
+        dates={appState.availableDates}
+        currentIndex={appState.currentDateIndex}
+        isAnimating={appState.isAnimating}
+        onDateChange={handleDateChange}
+        onToggleAnimation={handleToggleAnimation}
+        onStopAnimation={handleStopAnimation}
+        disabled={appState.isLoading}
+        visible={!menuVisible()}
+      />
     </>
   );
 };

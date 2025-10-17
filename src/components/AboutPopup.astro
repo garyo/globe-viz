@@ -41,6 +41,16 @@ const buildInfo = {
         <li>View historical data by date</li>
         <li>Animate through time to see temperature trends</li>
         <li>Auto-rotate and zoom via interactive camera controls</li>
+        <li>
+          <strong>Keyboard Shortcuts:</strong>
+          <ul style="margin-top: 0.5em;">
+            <li><strong>Spacebar</strong> - Play/Pause animation</li>
+            <li><strong>Left/Right Arrows</strong> - Navigate backward/forward one day</li>
+            <li><strong>R</strong> - Toggle auto-rotation on/off</li>
+            <li><strong>T</strong> - Switch between Temperature and Temp Anomaly datasets</li>
+            <li><strong>?</strong> - Show this About dialog</li>
+          </ul>
+        </li>
       </ul>
       <p>
         <strong>Data Source:</strong> NASA OISST daily 0.25° resolution data,
@@ -203,7 +213,8 @@ const buildInfo = {
   }
 
   .about-content ul {
-    margin: 10px 0 15px 20px;
+    margin: 10px 0 15px 10px;
+    padding-left: 10px;
   }
 
   .about-content li {

@@ -13,11 +13,11 @@ export const RotationControls = (props: RotationControlsProps) => {
         onClick={props.onToggleRotate}
         title={props.autoRotate ? 'Stop rotation' : 'Start rotation'}
       >
-        {props.autoRotate ? '🔄 Stop' : '🔄 Rotate'}
+        {props.autoRotate ? '⏸ Stop' : '🔄 Rotate'}
       </button>
 
       <label class="control-label inline">
-        <span>Speed: {props.rotateSpeed.toFixed(1)}</span>
+        <span>Rotate Speed: {props.rotateSpeed.toFixed(1)}</span>
         <input
           type="range"
           class="control-slider"

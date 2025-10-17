@@ -64,9 +64,9 @@ export const TopBar = () => {
 
   return (
     <div class="topbar">
-      <div>
+      <div class="topbar-info">
         <div>Global Sea Surface Temperature</div>
-        <div id="topdate">Date: {getDate()}</div>
+        <div id="topdate" class="topbar-date">Date: {getDate()}</div>
         <div>
           <button
             class="about-button"

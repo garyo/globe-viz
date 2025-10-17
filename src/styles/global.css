@@ -51,7 +51,7 @@ html {
     overflow: hidden;
 }
 
-.topbar > div:first-child {
+.topbar-info {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
@@ -59,7 +59,7 @@ html {
     flex: 1;
 }
 
-.topbar > div:first-child > div {
+.topbar-info > div {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -211,6 +211,12 @@ h1 {
     100% { transform: rotate(360deg); }
 }
 
+/* Date in topbar - make it prominent for animation tracking */
+.topbar-date {
+    font-weight: 600;
+    font-size: 1.1rem;
+}
+
 /* Mobile and tablet responsive styles */
 @media screen and (max-width: 768px) {
     :root {
@@ -225,18 +231,23 @@ h1 {
         gap: 0.5rem;
     }
     
-    .topbar > div:first-child {
+    .topbar-info {
         flex-direction: row;
         justify-content: space-between;
         align-items: center;
         gap: 0.5rem;
         flex-wrap: wrap;
     }
-    
-    .topbar > div:first-child > div {
+
+    .topbar-info > div {
         font-size: 0.9rem;
     }
-    
+
+    .topbar-info .topbar-date {
+        font-size: 1.3rem;
+        font-weight: 700;
+    }
+
     #colormap {
         height: 70px;
         max-width: 100%;
@@ -255,16 +266,21 @@ h1 {
     :root {
         font-size: 12px;
     }
-    
+
     .topbar {
         min-height: 50px;
         padding: 0.25rem;
     }
-    
-    .topbar > div:first-child > div {
+
+    .topbar-info > div {
         font-size: 0.8rem;
     }
-    
+
+    .topbar-info .topbar-date {
+        font-size: 1.5rem;
+        font-weight: 700;
+    }
+
     #colormap {
         height: 60px;
     }
@@ -286,13 +302,18 @@ h1 {
         padding: 0.25rem 0.5rem;
     }
 
-    .topbar > div:first-child {
+    .topbar-info {
         flex-direction: row;
         gap: 1rem;
     }
 
-    .topbar > div:first-child > div {
+    .topbar-info > div {
         font-size: 0.8rem;
+    }
+
+    .topbar-info .topbar-date {
+        font-size: 1.1rem;
+        font-weight: 700;
     }
 
     #colormap {
@@ -596,7 +617,9 @@ h1 {
 }
 
 .control-button {
-    padding: 6px 12px;
+    min-width: 70px;
+    height: 28px;
+    padding: 0 8px;
     background: rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 3px;
@@ -604,6 +627,9 @@ h1 {
     font-size: 12px;
     cursor: pointer;
     white-space: nowrap;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .control-button:hover {
@@ -616,10 +642,18 @@ h1 {
     justify-content: space-between;
     align-items: center;
     gap: 8px;
+    min-width: 0; /* Allow shrinking */
 }
 
+.control-label.inline > span {
+    flex-shrink: 0; /* Don't shrink the label text */
+    white-space: nowrap;
+}
+
+.control-label.inline .control-slider,
 .control-label.inline .control-select {
     flex: 1;
+    min-width: 60px; /* Ensure slider doesn't get too small */
 }
 
 /* Mobile styles for control panel */
@@ -652,5 +686,110 @@ h1 {
         padding: 6px 10px;
         top: 0.25rem;
         left: 0.25rem;
+    }
+}
+
+/* Quick date slider - unobtrusive slider at bottom when Options closed */
+.quick-date-slider {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 5;
+    padding: 8px 16px;
+    background: transparent;
+    opacity: 0;
+    transform: translateY(100%);
+    transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.quick-date-slider.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.quick-play-button {
+    width: 42px;
+    height: 32px;
+    padding: 0;
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 4px;
+    color: white;
+    font-size: 16px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.quick-play-button:hover {
+    background: rgba(0, 0, 0, 0.8);
+}
+
+.quick-play-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.quick-slider {
+    flex: 1;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.3);
+    outline: none;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.quick-slider::-webkit-slider-thumb {
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    background: #fff;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.quick-slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    background: #fff;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+@media screen and (max-width: 768px) {
+    .quick-date-slider {
+        padding: 6px 12px;
+    }
+
+    .quick-play-button {
+        width: 48px;
+        height: 40px;
+        font-size: 18px;
+    }
+
+    .quick-slider {
+        height: 8px;
+    }
+
+    .quick-slider::-webkit-slider-thumb {
+        width: 24px;
+        height: 24px;
+    }
+
+    .quick-slider::-moz-range-thumb {
+        width: 24px;
+        height: 24px;
     }
 }
