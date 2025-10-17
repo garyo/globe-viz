@@ -37,8 +37,8 @@ export const GlobeScene = () => {
   let cleanupFullscreen: (() => void) | undefined;
   let cleanupResize: (() => void) | undefined;
 
-  // Texture cache to avoid re-fetching from S3 (max 1 year of dates)
-  const textureCache = new TextureCache(365);
+  // Texture cache to avoid re-fetching from S3 (max a couple of years)
+  const textureCache = new TextureCache(366*2);
 
   // Track the most recently requested date to avoid displaying stale loads
   let currentLoadRequestId = 0;
