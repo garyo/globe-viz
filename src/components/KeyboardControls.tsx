@@ -9,10 +9,16 @@ export const KeyboardControls = () => {
         return;
       }
 
-      // Ignore if user is typing in an input or textarea
-      if (e.target instanceof HTMLInputElement ||
-          e.target instanceof HTMLTextAreaElement) {
-        return;
+      // Ignore if user is typing in a text input or textarea
+      // Exception: allow spacebar when range slider (date slider) has focus
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        const isRangeInput = e.target instanceof HTMLInputElement && e.target.type === 'range';
+        const isSpacebar = e.key === ' ';
+
+        // Allow spacebar on range sliders, block everything else
+        if (!(isRangeInput && isSpacebar)) {
+          return;
+        }
       }
 
       switch (e.key.toLowerCase()) {
