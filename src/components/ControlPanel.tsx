@@ -49,6 +49,12 @@ export const ControlPanel = () => {
     // Don't save to localStorage - let user navigate freely during session
   };
 
+  const handleStopAnimation = () => {
+    if (appState.isAnimating) {
+      setAppState('isAnimating', false);
+    }
+  };
+
   const handleToggleAnimation = () => {
     // If starting to play from the last frame, jump to beginning immediately
     if (!appState.isAnimating &&
@@ -98,6 +104,7 @@ export const ControlPanel = () => {
               dates={appState.availableDates}
               currentIndex={appState.currentDateIndex}
               onDateChange={handleDateChange}
+              onStopAnimation={handleStopAnimation}
               disabled={appState.isLoading}
             />
 

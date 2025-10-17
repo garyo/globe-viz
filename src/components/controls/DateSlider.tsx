@@ -4,6 +4,7 @@ interface DateSliderProps {
   dates: string[];
   currentIndex: number;
   onDateChange: (index: number) => void;
+  onStopAnimation?: () => void;
   disabled?: boolean;
 }
 
@@ -35,6 +36,8 @@ export const DateSlider = (props: DateSliderProps) => {
           step={1}
           value={props.currentIndex}
           disabled={props.disabled || props.dates.length <= 1}
+          onMouseDown={() => props.onStopAnimation?.()}
+          onTouchStart={() => props.onStopAnimation?.()}
           onInput={(e) => props.onDateChange(parseInt(e.currentTarget.value))}
         />
         <div class="date-range-labels">
