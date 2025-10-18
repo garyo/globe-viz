@@ -31,7 +31,11 @@ export function createControls(
   target: Vector3
 ): OrbitControls {
   const controls = new OrbitControls(camera, canvas);
-  controls.target = target.clone();
+  // Set target slightly above center to tilt view downward
+  // This makes the globe sit lower on screen (useful with overlay topbar)
+  const adjustedTarget = target.clone();
+  adjustedTarget.y += 0.15;
+  controls.target = adjustedTarget;
   controls.enableDamping = true;
   controls.autoRotate = false;
 

@@ -20,6 +20,10 @@ export const ControlPanel = () => {
     setMobile(isMobile());
   });
 
+  const toggleMenu = () => {
+    setMenuVisible(!menuVisible());
+  };
+
   const handleDatasetChange = (value: typeof appState.dataset) => {
     setAppState('dataset', value);
     saveState();
@@ -75,16 +79,11 @@ export const ControlPanel = () => {
     window.location.reload();
   };
 
-  const toggleMenu = () => {
-    setMenuVisible(!menuVisible());
-  };
-
   return (
     <>
       <button class="menu-toggle" onClick={toggleMenu}>
         {menuVisible() ? 'Close' : 'Options'}
       </button>
-
       <div
         class="control-panel"
         classList={{ visible: menuVisible() }}

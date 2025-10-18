@@ -39,9 +39,9 @@ import '../styles/global.css';
     <div class="loading">Loading&#8230;</div>
     <AppLoader client:only="solid-js">
       <div id="content" class="wrapper">
+        <GlobeScene client:only="solid-js" />
         <TopBar client:only="solid-js" />
-        <div id="scene-container">
-          <GlobeScene client:only="solid-js" />
+        <div id="scene-overlay">
           <ControlPanel client:only="solid-js" />
         </div>
       </div>

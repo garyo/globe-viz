@@ -31,15 +31,16 @@ html {
 }
 
 #content {
-    height: 100vh;
-    width: 100vw;
     display: flex;
     flex-direction: column;
+    height: 100vh;
+    width: 100vw;
     overflow: hidden;
 }
 
 .topbar {
-    min-height: 80px;
+    z-index: 10;
+    background: rgba(0,0,0,0.5);
     outline: 1px solid lightblue;
     display: flex;
     flex-direction: row;
@@ -48,7 +49,6 @@ html {
     padding: 0.5rem;
     gap: 1rem;
     flex-shrink: 0;
-    overflow: hidden;
 }
 
 .topbar-info {
@@ -98,20 +98,21 @@ html {
     flex-shrink: 0;
 }
 
-/* Container for both scene and control panel */
-#scene-container {
-    position: relative;
-    flex: 1;
-    min-height: 0; /* Allow shrinking */
-    display: flex;
-    flex-direction: column;
+/* Scene fills entire viewport behind everything */
+#scene-wrapper {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
 }
 
-#scene-wrapper {
-    position: relative;
+/* Transparent overlay below topbar - contains controls */
+#scene-overlay {
     flex: 1;
-    min-height: 0; /* Allow shrinking */
-    overflow: hidden;
+    position: relative;
+    min-height: 0;
+    pointer-events: none;
+    z-index: 5;
 }
 
 #scene {
@@ -222,9 +223,8 @@ h1 {
     :root {
         font-size: 14px;
     }
-    
+
     .topbar {
-        min-height: 60px;
         flex-direction: column;
         align-items: stretch;
         padding: 0.5rem;
@@ -268,7 +268,6 @@ h1 {
     }
 
     .topbar {
-        min-height: 50px;
         padding: 0.25rem;
     }
 
@@ -296,8 +295,11 @@ h1 {
 
 /* Landscape mobile orientation */
 @media screen and (max-height: 500px) and (orientation: landscape) {
+    :root {
+        font-size: 14px;
+    }
+
     .topbar {
-        min-height: 40px;
         flex-direction: row;
         padding: 0.25rem 0.5rem;
     }
@@ -565,7 +567,7 @@ h1 {
     background: rgba(255, 0, 0, 0.3);
 }
 
-/* Menu toggle button */
+/* Menu toggle button - positioned at top-right of scene overlay */
 .menu-toggle {
     position: absolute;
     top: 0.5rem;
