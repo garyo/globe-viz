@@ -1,5 +1,5 @@
 import { onMount, onCleanup } from 'solid-js';
-import { appState, setAppState } from '../stores/appState';
+import { appState, setAppState, saveState } from '../stores/appState';
 
 export const KeyboardControls = () => {
   onMount(() => {
@@ -21,8 +21,13 @@ export const KeyboardControls = () => {
         }
       }
 
+      // Most keyboard shortcuts are globe-specific. The About shortcut is
+      // available everywhere.
+      const onGlobeTab = appState.activeTab === 'globe';
+
       switch (e.key.toLowerCase()) {
         case ' ': // Spacebar - play/pause animation
+          if (!onGlobeTab) return;
           e.preventDefault();
           if (appState.availableDates.length > 1) {
             // If starting to play from the last frame, jump to beginning
@@ -35,6 +40,7 @@ export const KeyboardControls = () => {
           break;
 
         case 'arrowleft': // Left arrow - previous date
+          if (!onGlobeTab) return;
           e.preventDefault();
           if (appState.currentDateIndex > 0) {
             setAppState('currentDateIndex', appState.currentDateIndex - 1);
@@ -42,6 +48,7 @@ export const KeyboardControls = () => {
           break;
 
         case 'arrowright': // Right arrow - next date
+          if (!onGlobeTab) return;
           e.preventDefault();
           if (appState.currentDateIndex < appState.availableDates.length - 1) {
             setAppState('currentDateIndex', appState.currentDateIndex + 1);
@@ -49,6 +56,7 @@ export const KeyboardControls = () => {
           break;
 
         case 'r': // R - toggle rotation
+          if (!onGlobeTab) return;
           e.preventDefault();
           setAppState('autoRotate', !appState.autoRotate);
           break;
@@ -61,9 +69,10 @@ export const KeyboardControls = () => {
           setAppState('dataset', newDataset);
           break;
 
-        case '?': // ? - show About popup
+        case '?': // ? - open About tab
           e.preventDefault();
-          document.dispatchEvent(new CustomEvent('open-about-popup'));
+          setAppState('activeTab', 'about');
+          saveState();
           break;
       }
     };

@@ -20,6 +20,9 @@ export interface Assets {
 export interface DateIndex {
   dates: string[];  // Array of 'YYYY-MM-DD' strings
   latest: string;   // Most recent date
+  timeseries?: {
+    regions: string[];  // Region IDs available under timeseries/<id>.json
+  };
 }
 
 /**

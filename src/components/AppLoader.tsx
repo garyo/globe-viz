@@ -1,9 +1,11 @@
-import { createSignal, onMount, onCleanup, Show, type ParentComponent } from 'solid-js';
+import { createSignal, onMount, onCleanup, Show, type Component } from 'solid-js';
 import { setAppState, appState } from '../stores/appState';
 import { fetchDateIndex, fetchDatasetAssets } from '../lib/data/assets';
 import { TextureLoader } from 'three';
+import { AppTabs } from './AppTabs';
+import { KeyboardControls } from './KeyboardControls';
 
-export const AppLoader: ParentComponent = (props) => {
+export const AppLoader: Component = () => {
   const [isLoading, setIsLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
   let refreshInterval: number | undefined;
@@ -123,7 +125,8 @@ export const AppLoader: ParentComponent = (props) => {
         </Show>
       }
     >
-      {props.children}
+      <AppTabs />
+      <KeyboardControls />
     </Show>
   );
 };

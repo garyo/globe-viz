@@ -1,14 +1,11 @@
 import { Show, createSignal, onMount } from 'solid-js';
 import { appState, setAppState, saveState, hasMultipleDates } from '../stores/appState';
 import { isMobile } from '../lib/helpers/responsiveness-client';
-import { Select } from './controls/Select';
 import { Toggle } from './controls/Toggle';
 import { DateSlider } from './controls/DateSlider';
 import { AnimationControls } from './controls/AnimationControls';
 import { RotationControls } from './controls/RotationControls';
 import { QuickDateSlider } from './controls/QuickDateSlider';
-
-const DATASETS = ['Temperature', 'Temp Anomaly'] as const;
 
 export const ControlPanel = () => {
   const [debugOpen, setDebugOpen] = createSignal(false);
@@ -22,11 +19,6 @@ export const ControlPanel = () => {
 
   const toggleMenu = () => {
     setMenuVisible(!menuVisible());
-  };
-
-  const handleDatasetChange = (value: typeof appState.dataset) => {
-    setAppState('dataset', value);
-    saveState();
   };
 
   const handleToggleRotate = () => {
@@ -93,13 +85,6 @@ export const ControlPanel = () => {
         </div>
 
         <div class="control-panel-body">
-            <Select
-              label="Dataset"
-              value={appState.dataset}
-              options={DATASETS}
-              onChange={handleDatasetChange}
-            />
-
             <DateSlider
               dates={appState.availableDates}
               currentIndex={appState.currentDateIndex}

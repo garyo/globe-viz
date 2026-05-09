@@ -1,10 +1,5 @@
 ---
 import { AppLoader } from '../components/AppLoader';
-import { TopBar } from '../components/TopBar';
-import { GlobeScene } from '../components/GlobeScene';
-import { ControlPanel } from '../components/ControlPanel';
-import { KeyboardControls } from '../components/KeyboardControls';
-import AboutPopup from '../components/AboutPopup.astro';
 import '../styles/global.css';
 ---
 
@@ -16,37 +11,45 @@ import '../styles/global.css';
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <title>Sea Surface Temperature</title>
+    <title>Climate Data Explorer</title>
 
     <!-- Open Graph tags -->
-    <meta name="description" content="Explore daily global sea surface temperatures and anomalies on an interactive 3D globe powered by NASA OISST data.">
+    <meta name="description" content="Explore daily global sea surface temperatures, anomalies, and trends on an interactive 3D globe powered by NOAA OISST data.">
     <meta property="og:type" content="website">
     <meta property="og:locale" content="en_US">
     <meta property="og:url" content="https://globe-viz.oberbrunner.com/">
-    <meta property="og:title" content="Daily Global Sea Surface Temperature Visualization">
-    <meta property="og:description" content="Interact with a 3D globe to compare daily sea surface temperatures, anomalies, and trends using NASA’s OISST dataset.">
+    <meta property="og:title" content="Climate Data Explorer — Sea Surface Temperatures">
+    <meta property="og:description" content="Interact with a 3D globe and time-series charts to explore sea surface temperatures, anomalies, and long-term trends from NOAA OISST.">
     <meta property="og:image" content="https://globe-viz.oberbrunner.com/og-image-20251011.jpg">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta property="og:image:alt" content="Stylized view of global sea surface temperature data with controls for anomalies and trends.">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Daily Global Sea Surface Temperature Visualization">
-    <meta name="twitter:description" content="Animate daily SST data, compare anomalies, and explore trends on an interactive globe.">
+    <meta name="twitter:title" content="Climate Data Explorer — Sea Surface Temperatures">
+    <meta name="twitter:description" content="Animate daily SST data, compare anomalies, and explore long-term trends on an interactive globe.">
     <meta name="twitter:image" content="https://globe-viz.oberbrunner.com/og-image-20251011.jpg">
     <meta name="twitter:image:alt" content="Stylized view of global sea surface temperature data with controls for anomalies and trends.">
+
+    <!-- Set the active theme synchronously, before paint, to avoid FOUC.
+         Reads themePref out of saved appState (set by Solid + saveState()),
+         falling back to OS preference when unset or 'system'. -->
+    <script is:inline>
+      (() => {
+        try {
+          const saved = JSON.parse(localStorage.getItem('appState') || '{}');
+          const pref = saved.themePref || 'system';
+          const dark =
+            pref === 'dark' ||
+            (pref === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        } catch (_) {
+          document.documentElement.dataset.theme = 'dark';
+        }
+      })();
+    </script>
   </head>
-  <body>
+  <body data-active-tab="globe">
     <div class="loading">Loading&#8230;</div>
-    <AppLoader client:only="solid-js">
-      <div id="content" class="wrapper">
-        <GlobeScene client:only="solid-js" />
-        <TopBar client:only="solid-js" />
-        <div id="scene-overlay">
-          <ControlPanel client:only="solid-js" />
-        </div>
-      </div>
-      <KeyboardControls client:only="solid-js" />
-    </AppLoader>
-    <AboutPopup />
+    <AppLoader client:only="solid-js" />
   </body>
 </html>

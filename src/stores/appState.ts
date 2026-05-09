@@ -11,7 +11,18 @@ export interface Metadata {
   day: number;
 }
 
+export type TabId = 'globe' | 'trends' | 'about';
+export type ThemePref = 'light' | 'dark' | 'system';
+export type EffectiveTheme = 'light' | 'dark';
+
 export interface AppState {
+  // Active top-level tab
+  activeTab: TabId;
+
+  // Theme preference (resolves to effectiveTheme via system query when 'system')
+  themePref: ThemePref;
+  effectiveTheme: EffectiveTheme;
+
   // Dataset selection
   dataset: 'Temperature' | 'Temp Anomaly';
 
@@ -59,6 +70,9 @@ const defaultMetadata: Metadata = {
 };
 
 const initialState: AppState = {
+  activeTab: 'globe',
+  themePref: 'system',
+  effectiveTheme: 'dark',
   dataset: 'Temp Anomaly',
   landColor: '#aaaaaa',
   autoRotate: false,
@@ -95,15 +109,23 @@ function loadSavedState(): Partial<AppState> {
   if (saved) {
     try {
       const parsed = JSON.parse(saved);
-      // Only restore UI settings, not data
-      return {
-        dataset: parsed.dataset,
-        landColor: parsed.landColor,
-        autoRotate: parsed.autoRotate,
-        autoRotateSpeed: parsed.autoRotateSpeed,
-        showStats: parsed.showStats,
-        showAxes: parsed.showAxes,
-      };
+      // Only restore UI settings, not data. Filter undefined so missing keys
+      // don't clobber the defaults in initialState when spread.
+      const restored: Partial<AppState> = {};
+      const KEYS = [
+        'activeTab',
+        'themePref',
+        'dataset',
+        'landColor',
+        'autoRotate',
+        'autoRotateSpeed',
+        'showStats',
+        'showAxes',
+      ] as const;
+      for (const k of KEYS) {
+        if (parsed[k] !== undefined) (restored as Record<string, unknown>)[k] = parsed[k];
+      }
+      return restored;
     } catch (e) {
       console.error('Failed to load saved state:', e);
     }
@@ -133,6 +155,8 @@ export function saveState() {
   if (saveTimeout) clearTimeout(saveTimeout);
   saveTimeout = window.setTimeout(() => {
     const toSave = {
+      activeTab: appState.activeTab,
+      themePref: appState.themePref,
       dataset: appState.dataset,
       landColor: appState.landColor,
       autoRotate: appState.autoRotate,
@@ -159,4 +183,44 @@ export function getCurrentDate(): string | undefined {
 // Helper to check if we have multiple dates available
 export function hasMultipleDates(): boolean {
   return appState.availableDates.length > 1;
+}
+
+/**
+ * Resolve the user's themePref into a concrete 'light' | 'dark', consulting
+ * the OS preference for 'system'. Safe to call from non-browser contexts.
+ */
+export function resolveTheme(pref: ThemePref): EffectiveTheme {
+  if (pref !== 'system') return pref;
+  if (typeof window === 'undefined' || !window.matchMedia) return 'dark';
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+/**
+ * Apply the effective theme to the document and update appState.
+ * Call once on app startup, and whenever themePref changes.
+ */
+export function applyTheme() {
+  const eff = resolveTheme(appState.themePref);
+  if (typeof document !== 'undefined') {
+    document.documentElement.dataset.theme = eff;
+  }
+  if (appState.effectiveTheme !== eff) {
+    setAppState('effectiveTheme', eff);
+  }
+}
+
+let systemThemeMql: MediaQueryList | undefined;
+let systemThemeListener: (() => void) | undefined;
+
+/**
+ * Begin listening for OS-level color-scheme changes; only re-applies when
+ * the user is in 'system' mode. Idempotent.
+ */
+export function startSystemThemeWatch() {
+  if (typeof window === 'undefined' || !window.matchMedia || systemThemeMql) return;
+  systemThemeMql = window.matchMedia('(prefers-color-scheme: dark)');
+  systemThemeListener = () => {
+    if (appState.themePref === 'system') applyTheme();
+  };
+  systemThemeMql.addEventListener('change', systemThemeListener);
 }
