@@ -1,11 +1,18 @@
-import { Show, createEffect } from 'solid-js';
+import { Show, Suspense, createEffect, lazy } from 'solid-js';
 import { appState } from '../stores/appState';
 import { GlobeScene } from './GlobeScene';
 import { GlobalHeader } from './GlobalHeader';
 import { TopBar } from './TopBar';
 import { ControlPanel } from './ControlPanel';
-import { Trends } from './Trends';
 import { About } from './About';
+
+// Lazy-load Trends so ECharts (~800KB pre-gzip) only ships when the user
+// actually opens the Trends tab. The chunk also carries TrendsGrid,
+// MiniChart, and the shared timeseries utilities, none of which the Globe
+// tab uses.
+const Trends = lazy(() =>
+  import('./Trends').then((m) => ({ default: m.Trends }))
+);
 
 export const AppTabs = () => {
   // Mirror the active tab onto the body so CSS can hide globe-only chrome
@@ -30,7 +37,9 @@ export const AppTabs = () => {
         </Show>
 
         <Show when={appState.activeTab === 'trends'}>
-          <Trends />
+          <Suspense fallback={<div class="trends-loading">Loading charts…</div>}>
+            <Trends />
+          </Suspense>
         </Show>
 
         <Show when={appState.activeTab === 'about'}>
