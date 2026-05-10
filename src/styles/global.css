@@ -654,6 +654,24 @@ body[data-trends-mode="grid"] .trends-grid-view { display: block; }
     margin-bottom: 0.4rem;
 }
 
+.about-tab .about-content h3 {
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+    font-size: 1.15rem;
+    color: var(--text-primary);
+}
+
+.about-figure {
+    display: block;
+    width: 100%;
+    max-width: 720px;
+    height: auto;
+    margin: 0.5rem auto;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-overlay-soft);
+}
+
 /* =========================================================================
    Loading spinner
    ========================================================================= */

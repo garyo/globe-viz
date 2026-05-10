@@ -59,6 +59,31 @@ export const About = () => {
           processed by the sea-surface-temp-viz project and hosted on AWS S3.
           The color maps show temperature ranges from cold (blue/purple) to warm (orange/red and beyond).
         </p>
+
+        <h3 style="margin-top: 1.8em">Regions on the Trends tab</h3>
+        <p>
+          The Trends tab lets you explore time series for ten regions: a global
+          ocean average (60°S–60°N), the tropics (±23.5°), each hemisphere, the
+          Niño 3.4 box used in ENSO indices, and the five major ocean basins.
+        </p>
+        <img
+          src="/regions-map.png"
+          alt="World map showing the ten regions used in the Trends tab — five ocean basins as colored areas plus bbox overlays for global, tropics, hemispheres, and Niño 3.4."
+          class="about-figure"
+        />
+        <p>
+          Basin boundaries broadly follow the IHO <em>Limits of Oceans and
+          Seas</em>, including each ocean's open marginal seas (Bering, Sea of
+          Japan, Coral Sea for the Pacific; Caribbean, Gulf of Mexico,
+          Norwegian Sea for the Atlantic; Barents, Kara, Laptev, Beaufort for
+          the Arctic; etc.). Semi-enclosed or climatically distinct bodies —
+          Mediterranean, Baltic, Black Sea, Hudson Bay, Red Sea, Persian Gulf —
+          are deliberately excluded so the basin means reflect open-ocean
+          dynamics rather than the very different conditions of enclosed seas.
+          Each regional average is area-weighted (cells near the equator count
+          more than cells near the poles, in proportion to the area each grid
+          cell actually covers on Earth).
+        </p>
         <p>
           This is an open-source project under the MIT license.<br />
           Data generator:{' '}
