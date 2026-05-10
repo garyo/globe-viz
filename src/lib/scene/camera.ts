@@ -13,13 +13,21 @@ export function createCamera(canvas: HTMLCanvasElement): PerspectiveCamera {
   const aspectRatio = viewport.ratio;
   const isNarrow = aspectRatio < 1;
 
-  if (isMobile()) {
-    const distance = isNarrow ? 3.0 : 2.5;
-    camera.position.set(distance, distance * 0.5, distance);
-  } else {
-    const distance = aspectRatio < 1.2 ? 2.5 : 2.0;
-    camera.position.set(distance, distance * 0.5, distance);
-  }
+  const distance = isMobile()
+    ? (isNarrow ? 3.0 : 2.5)
+    : (aspectRatio < 1.2 ? 2.5 : 2.0);
+
+  // Center the initial view on the Atlantic / eastern US.
+  // The data texture maps u=0 → lon 0°, with three.js sphere UVs placing
+  // u=0.25 at +Z, u=0.5 at +X, u=0.75 at -Z. So a camera direction of
+  // (-cos(lon), 0, sin(lon)) (origin → camera) faces longitude `lon`.
+  const lonRad = -45 * Math.PI / 180;
+  const horiz = distance * Math.SQRT2;
+  camera.position.set(
+    -horiz * Math.cos(lonRad),
+    distance * 0.5,
+    horiz * Math.sin(lonRad),
+  );
 
   return camera;
 }
