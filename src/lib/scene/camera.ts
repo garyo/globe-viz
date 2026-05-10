@@ -3,12 +3,11 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { isMobile, getViewportDimensions } from '../helpers/responsiveness-client';
 
 export function createCamera(canvas: HTMLCanvasElement): PerspectiveCamera {
-  const camera = new PerspectiveCamera(
-    40,
-    canvas.clientWidth / canvas.clientHeight,
-    0.1,
-    100
-  );
+  // Fall back to 1 when the canvas is hidden at mount (e.g. starting on a
+  // non-Globe tab): 0/0 would seed the projection matrix with NaN, and
+  // updateCameraAspect's diff check then never recovers.
+  const aspect = canvas.clientWidth / canvas.clientHeight || 1;
+  const camera = new PerspectiveCamera(40, aspect, 0.1, 100);
 
   const viewport = getViewportDimensions();
   const aspectRatio = viewport.ratio;
@@ -68,9 +67,11 @@ export function createControls(
 }
 
 export function updateCameraAspect(camera: PerspectiveCamera, canvas: HTMLCanvasElement) {
-  const newAspect = canvas.clientWidth / canvas.clientHeight;
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  if (w === 0 || h === 0) return;
 
-  // Only update if aspect ratio actually changed (avoid unnecessary matrix recalculation)
+  const newAspect = w / h;
   if (Math.abs(camera.aspect - newAspect) > 0.001) {
     camera.aspect = newAspect;
     camera.updateProjectionMatrix();
