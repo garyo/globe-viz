@@ -17,11 +17,14 @@ export function createCamera(canvas: HTMLCanvasElement): PerspectiveCamera {
     ? (isNarrow ? 3.0 : 2.5)
     : (aspectRatio < 1.2 ? 2.5 : 2.0);
 
-  // Center the initial view on the Atlantic / eastern US.
+  // Center the initial view on Mexico (~100°W), so the eastern Pacific,
+  // the Americas, and the western Atlantic are all visible at once —
+  // useful for tracking developing ENSO conditions in the Niño regions
+  // alongside the western Atlantic basin.
   // The data texture maps u=0 → lon 0°, with three.js sphere UVs placing
   // u=0.25 at +Z, u=0.5 at +X, u=0.75 at -Z. So a camera direction of
   // (-cos(lon), 0, sin(lon)) (origin → camera) faces longitude `lon`.
-  const lonRad = -45 * Math.PI / 180;
+  const lonRad = -100 * Math.PI / 180;
   const horiz = distance * Math.SQRT2;
   camera.position.set(
     -horiz * Math.cos(lonRad),
