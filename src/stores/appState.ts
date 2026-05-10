@@ -51,6 +51,12 @@ export interface AppState {
   isAnimating: boolean;      // Whether animation is playing
   animationSpeed: number;    // Animation speed in milliseconds between frames
 
+  // Trends tab: region selection. `availableRegions` mirrors the per-load
+  // index.json's timeseries.regions[] (not persisted); `region` is the user's
+  // current selection (persisted, defaults to 'global').
+  region: string;
+  availableRegions: string[];
+
   // Loading state
   isLoading: boolean;
   missingDateError: string | null;  // Error message if current date data is missing
@@ -89,6 +95,8 @@ const initialState: AppState = {
   currentDateIndex: 0,
   isAnimating: false,
   animationSpeed: 100, // 100ms between frames (10 fps)
+  region: 'global',
+  availableRegions: ['global'],
   isLoading: true,
   missingDateError: null,
   mobileMenuOpen: false,
@@ -121,6 +129,7 @@ function loadSavedState(): Partial<AppState> {
         'autoRotateSpeed',
         'showStats',
         'showAxes',
+        'region',
       ] as const;
       for (const k of KEYS) {
         if (parsed[k] !== undefined) (restored as Record<string, unknown>)[k] = parsed[k];
@@ -163,6 +172,7 @@ export function saveState() {
       autoRotateSpeed: appState.autoRotateSpeed,
       showStats: appState.showStats,
       showAxes: appState.showAxes,
+      region: appState.region,
     };
     localStorage.setItem('appState', JSON.stringify(toSave));
   }, 500);

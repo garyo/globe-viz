@@ -1,4 +1,4 @@
-import { Show, createEffect, createResource, onCleanup, onMount } from 'solid-js';
+import { For, Show, createEffect, createResource, onCleanup, onMount } from 'solid-js';
 import * as echarts from 'echarts/core';
 import { LineChart } from 'echarts/charts';
 import {
@@ -12,8 +12,23 @@ import {
 } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import type { EChartsOption } from 'echarts';
-import { appState } from '../stores/appState';
+import { appState, setAppState, saveState } from '../stores/appState';
 import { fetchTimeseries, type TimeseriesPayload } from '../lib/data/timeseries';
+
+// Human labels for known region IDs; mirrors regions.REGIONS in
+// sea-surface-temp-viz/regions.py. Unknown IDs fall back to the ID itself.
+const REGION_LABELS: Record<string, string> = {
+  global: 'Global (60°S–60°N)',
+  trop: 'Tropics (23.5°S–23.5°N)',
+  n_hemi: 'Northern Hemisphere',
+  s_hemi: 'Southern Hemisphere',
+  nino_3_4: 'Niño 3.4',
+  pacific: 'Pacific Ocean',
+  atlantic: 'Atlantic Ocean',
+  indian: 'Indian Ocean',
+  arctic: 'Arctic Ocean',
+  antarctic: 'Southern Ocean',
+};
 
 echarts.use([
   LineChart,
@@ -195,10 +210,11 @@ function buildOption(
   });
 
   const datasetLabel = dataset === 'sst' ? 'SST (°C)' : 'Anomaly vs. 1971–2000 mean (°C)';
+  const regionLabel = payload.region_label || REGION_LABELS[payload.region] || payload.region;
   const title =
     dataset === 'sst'
-      ? `Global Sea Surface Temperature, ${firstYear}–${lastYear}`
-      : `Global Sea Surface Temp Anomaly vs. 1971–2000 mean, ${firstYear}–${lastYear}`;
+      ? `${regionLabel} — Sea Surface Temperature, ${firstYear}–${lastYear}`
+      : `${regionLabel} — SST Anomaly vs. 1971–2000 mean, ${firstYear}–${lastYear}`;
 
   // Match the static graph's labeling: the two oldest years and the five
   // most recent (current year + four prior). Newest first so the current
@@ -260,7 +276,7 @@ function buildOption(
     animation: false,
     title: {
       text: title,
-      subtext: `Source: NOAA OISST · weighted avg 60°S–60°N · ${series.dates.length.toLocaleString()} daily values`,
+      subtext: `Source: NOAA OISST · cosine-latitude-weighted average · ${series.dates.length.toLocaleString()} daily values`,
       left: 'center',
       textStyle: { color: c.text, fontSize: 16 },
       subtextStyle: { color: c.subtitle, fontSize: 11 },
@@ -349,8 +365,9 @@ export const Trends = () => {
   let chart: echarts.ECharts | undefined;
   let resizeHandler: (() => void) | undefined;
 
-  // Phase 1: only the global region exists on S3.
-  const region = () => 'global';
+  // Track the current region from appState so the resource refetches whenever
+  // the user changes the selection.
+  const region = () => appState.region;
 
   const [payload] = createResource(region, fetchTimeseries);
 
@@ -385,8 +402,28 @@ export const Trends = () => {
     chart.setOption(buildOption(data, ds, colors), true);
   });
 
+  const onRegionChange = (e: Event & { currentTarget: HTMLSelectElement }) => {
+    setAppState('region', e.currentTarget.value);
+    saveState();
+  };
+
   return (
     <div class="trends-tab">
+      <Show when={appState.availableRegions.length > 1}>
+        <div class="trends-header">
+          <label for="trends-region-select">Region:</label>
+          <select
+            id="trends-region-select"
+            class="trends-region-select"
+            value={appState.region}
+            onChange={onRegionChange}
+          >
+            <For each={appState.availableRegions}>
+              {(r) => <option value={r}>{REGION_LABELS[r] ?? r}</option>}
+            </For>
+          </select>
+        </div>
+      </Show>
       <Show when={payload.error}>
         <div class="trends-error">
           Failed to load time-series data: {String(payload.error)}

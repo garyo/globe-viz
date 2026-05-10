@@ -410,6 +410,31 @@ body[data-active-tab="about"] #scene-wrapper {
     pointer-events: auto;
 }
 
+.trends-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-overlay-soft);
+    flex-shrink: 0;
+    font-size: 0.85rem;
+}
+
+.trends-header label {
+    color: var(--text-secondary);
+}
+
+.trends-region-select {
+    background: var(--bg-app);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.25rem 0.5rem;
+    font: inherit;
+    cursor: pointer;
+}
+
 .trends-chart {
     flex: 1;
     min-height: 0;

@@ -22,6 +22,18 @@ export const AppLoader: Component = () => {
       // Set the available dates in app state
       setAppState('availableDates', dateIndex.dates);
 
+      // Available time-series regions (Trends tab). Older index.json files
+      // omit this field, so default to ['global'] for compatibility.
+      const regionsList = dateIndex.timeseries?.regions?.length
+        ? dateIndex.timeseries.regions
+        : ['global'];
+      setAppState('availableRegions', regionsList);
+      // If the persisted region is no longer offered (e.g. removed from S3),
+      // fall back to 'global' or whatever's first.
+      if (!regionsList.includes(appState.region)) {
+        setAppState('region', regionsList.includes('global') ? 'global' : regionsList[0]);
+      }
+
       // Set current date to the latest (last in the array)
       const latestIndex = dateIndex.dates.length - 1;
       setAppState('currentDateIndex', latestIndex >= 0 ? latestIndex : 0);
