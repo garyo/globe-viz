@@ -56,6 +56,9 @@ export interface AppState {
   // current selection (persisted, defaults to 'global').
   region: string;
   availableRegions: string[];
+  // 'single': one full-detail chart (with region selector).
+  // 'grid':   small-multiples view of every available region.
+  trendsMode: 'single' | 'grid';
 
   // Loading state
   isLoading: boolean;
@@ -97,6 +100,7 @@ const initialState: AppState = {
   animationSpeed: 100, // 100ms between frames (10 fps)
   region: 'global',
   availableRegions: ['global'],
+  trendsMode: 'single',
   isLoading: true,
   missingDateError: null,
   mobileMenuOpen: false,
@@ -130,6 +134,7 @@ function loadSavedState(): Partial<AppState> {
         'showStats',
         'showAxes',
         'region',
+        'trendsMode',
       ] as const;
       for (const k of KEYS) {
         if (parsed[k] !== undefined) (restored as Record<string, unknown>)[k] = parsed[k];
@@ -173,6 +178,7 @@ export function saveState() {
       showStats: appState.showStats,
       showAxes: appState.showAxes,
       region: appState.region,
+      trendsMode: appState.trendsMode,
     };
     localStorage.setItem('appState', JSON.stringify(toSave));
   }, 500);

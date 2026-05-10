@@ -14,6 +14,15 @@ import { CanvasRenderer } from 'echarts/renderers';
 import type { EChartsOption } from 'echarts';
 import { appState, setAppState, saveState } from '../stores/appState';
 import { fetchTimeseries, type TimeseriesPayload } from '../lib/data/timeseries';
+import {
+  type ThemeColors,
+  type YearSeries,
+  dayLabel,
+  groupByYear,
+  lerpHex,
+  readThemeColors,
+} from '../lib/timeseriesUtils';
+import { TrendsGrid } from './TrendsGrid';
 
 // Human labels for known region IDs; mirrors regions.REGIONS in
 // sea-surface-temp-viz/regions.py. Unknown IDs fall back to the ID itself.
@@ -43,106 +52,6 @@ echarts.use([
 ]);
 
 type SourceDataset = 'sst' | 'anom';
-
-// Days-before-month index for a leap year. Used to align all years' day-of-year
-// onto a common 0..365 axis so non-leap and leap years overlay cleanly,
-// matching ymd_to_year_day_for_graph() in sea-surface-temps.py.
-const LEAP_DAYS_BEFORE_MONTH = [0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335];
-
-function leapAlignedDayOfYear(dateStr: string): number {
-  const [, m, d] = dateStr.split('-').map(Number);
-  return LEAP_DAYS_BEFORE_MONTH[m - 1] + d - 1;
-}
-
-// Day-of-year (leap-aligned) → "Mon D" label
-function dayLabel(doy: number): string {
-  const refStart = Date.UTC(2000, 0, 1); // 2000 is a leap year
-  const date = new Date(refStart + doy * 86400000);
-  return date.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  });
-}
-
-// Linear interpolation between two color stops in the sRGB-ish color space
-// of CSS hex notation (good enough for our gradient).
-function lerpHex(a: string, b: string, t: number): string {
-  const pa = parseHex(a);
-  const pb = parseHex(b);
-  const out = pa.map((v, i) => Math.round(v + (pb[i] - v) * t));
-  return '#' + out.map((v) => v.toString(16).padStart(2, '0')).join('');
-}
-
-function parseHex(c: string): [number, number, number] {
-  const h = c.trim().replace(/^#/, '');
-  const full = h.length === 3 ? h.split('').map((x) => x + x).join('') : h.padEnd(6, '0');
-  return [
-    parseInt(full.slice(0, 2), 16),
-    parseInt(full.slice(2, 4), 16),
-    parseInt(full.slice(4, 6), 16),
-  ];
-}
-
-interface ThemeColors {
-  yearOld: string;
-  yearRecent: string;
-  yearCurrent: string;
-  yearPrev: string;
-  yearPrev2: string;
-  yearRecord: string;
-  axis: string;
-  grid: string;
-  text: string;
-  subtitle: string;
-  tooltipBg: string;
-  tooltipBorder: string;
-}
-
-function readVar(name: string, fallback: string): string {
-  if (typeof document === 'undefined') return fallback;
-  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return v || fallback;
-}
-
-function readThemeColors(): ThemeColors {
-  return {
-    yearOld: readVar('--year-old', '#cccccc'),
-    yearRecent: readVar('--year-recent', '#1a3a96'),
-    yearCurrent: readVar('--year-current', '#d92020'),
-    yearPrev: readVar('--year-prev', '#c66400'),
-    yearPrev2: readVar('--year-prev2', '#1f7a3a'),
-    yearRecord: readVar('--year-record', '#000000'),
-    axis: readVar('--chart-axis', 'rgba(0,0,0,0.4)'),
-    grid: readVar('--chart-grid', 'rgba(0,0,0,0.08)'),
-    text: readVar('--chart-text', 'rgba(0,0,0,0.8)'),
-    subtitle: readVar('--chart-subtitle', 'rgba(0,0,0,0.55)'),
-    tooltipBg: readVar('--chart-tooltip-bg', 'rgba(255,255,255,0.96)'),
-    tooltipBorder: readVar('--chart-tooltip-border', 'rgba(0,0,0,0.18)'),
-  };
-}
-
-interface YearSeries {
-  year: number;
-  data: [number, number][]; // [day-of-year, value]
-}
-
-function groupByYear(series: { dates: string[]; values: number[] }): YearSeries[] {
-  const byYear = new Map<number, [number, number][]>();
-  for (let i = 0; i < series.dates.length; i++) {
-    const date = series.dates[i];
-    const value = series.values[i];
-    if (!Number.isFinite(value)) continue;
-    const year = Number(date.slice(0, 4));
-    const doy = leapAlignedDayOfYear(date);
-    const arr = byYear.get(year) ?? [];
-    arr.push([doy, value]);
-    byYear.set(year, arr);
-  }
-  return [...byYear.entries()]
-    .sort(([a], [b]) => a - b)
-    .map(([year, data]) => ({ year, data: data.sort((p, q) => p[0] - q[0]) }));
-}
 
 function findRecord(yearsSeries: YearSeries[]): { year: number; doy: number; value: number } | null {
   let best: { year: number; doy: number; value: number } | null = null;
@@ -276,7 +185,7 @@ function buildOption(
     animation: false,
     title: {
       text: title,
-      subtext: `Source: NOAA OISST · cosine-latitude-weighted average · ${series.dates.length.toLocaleString()} daily values`,
+      subtext: `Source: NOAA OISST · area-weighted average · ${series.dates.length.toLocaleString()} daily values`,
       left: 'center',
       textStyle: { color: c.text, fontSize: 16 },
       subtextStyle: { color: c.subtitle, fontSize: 11 },
@@ -402,8 +311,29 @@ export const Trends = () => {
     chart.setOption(buildOption(data, ds, colors), true);
   });
 
+  // Chart and grid are both mounted at all times (display-toggled by the
+  // body[data-trends-mode] selector). When the user returns to single mode,
+  // the chart container regains size and ECharts needs an explicit resize
+  // pass — its measurements during display:none are zero.
+  createEffect(() => {
+    if (appState.trendsMode === 'single') {
+      requestAnimationFrame(() => chart?.resize());
+    }
+  });
+
+  // Mirror trendsMode onto <body> so the CSS can toggle which view is visible
+  // without unmounting the chart instance.
+  createEffect(() => {
+    document.body.dataset.trendsMode = appState.trendsMode;
+  });
+
   const onRegionChange = (e: Event & { currentTarget: HTMLSelectElement }) => {
     setAppState('region', e.currentTarget.value);
+    saveState();
+  };
+
+  const setMode = (m: 'single' | 'grid') => {
+    setAppState('trendsMode', m);
     saveState();
   };
 
@@ -411,32 +341,69 @@ export const Trends = () => {
     <div class="trends-tab">
       <Show when={appState.availableRegions.length > 1}>
         <div class="trends-header">
-          <label for="trends-region-select">Region:</label>
-          <select
-            id="trends-region-select"
-            class="trends-region-select"
-            value={appState.region}
-            onChange={onRegionChange}
-          >
-            <For each={appState.availableRegions}>
-              {(r) => <option value={r}>{REGION_LABELS[r] ?? r}</option>}
-            </For>
-          </select>
+          <div class="trends-mode-toggle" role="group" aria-label="View mode">
+            <button
+              type="button"
+              class={`trends-mode-btn ${appState.trendsMode === 'single' ? 'is-active' : ''}`}
+              onClick={() => setMode('single')}
+              aria-pressed={appState.trendsMode === 'single'}
+            >
+              Single
+            </button>
+            <button
+              type="button"
+              class={`trends-mode-btn ${appState.trendsMode === 'grid' ? 'is-active' : ''}`}
+              onClick={() => setMode('grid')}
+              aria-pressed={appState.trendsMode === 'grid'}
+            >
+              Grid
+            </button>
+          </div>
+          <Show when={appState.trendsMode === 'single'}>
+            <label for="trends-region-select">Region:</label>
+            <select
+              id="trends-region-select"
+              class="trends-region-select"
+              value={appState.region}
+              onChange={onRegionChange}
+            >
+              <For each={appState.availableRegions}>
+                {(r) => <option value={r}>{REGION_LABELS[r] ?? r}</option>}
+              </For>
+            </select>
+          </Show>
         </div>
       </Show>
-      <Show when={payload.error}>
-        <div class="trends-error">
-          Failed to load time-series data: {String(payload.error)}
+      {/* Single-mode chart — always mounted so the ECharts instance survives
+          mode switches; CSS hides it when trendsMode === 'grid'. */}
+      <div class="trends-single-view">
+        <Show when={payload.error}>
+          <div class="trends-error">
+            Failed to load time-series data: {String(payload.error)}
+          </div>
+        </Show>
+        <Show when={payload.loading}>
+          <div class="trends-loading">Loading time-series…</div>
+        </Show>
+        <div ref={chartRef} class="trends-chart"></div>
+      </div>
+      {/* Grid-mode small multiples — also always mounted. */}
+      <Show when={appState.availableRegions.length > 1}>
+        <div class="trends-grid-view">
+          <TrendsGrid />
         </div>
       </Show>
-      <Show when={payload.loading}>
-        <div class="trends-loading">Loading time-series…</div>
-      </Show>
-      <div ref={chartRef} class="trends-chart"></div>
       <div class="trends-footer">
-        Drag the slider below the chart to zoom in time of year. Scroll inside the chart
-        to zoom; shift-scroll to pan. Use the Dataset toggle in the header to switch
-        between Temperature and Anomaly.
+        <Show
+          when={appState.trendsMode === 'single'}
+          fallback={
+            <span>Click any region to expand. Use the Dataset toggle in the header to switch between Temperature and Anomaly.</span>
+          }
+        >
+          <span>Drag the slider below the chart to zoom in time of year. Scroll inside the chart
+          to zoom; shift-scroll to pan. Use the Dataset toggle in the header to switch
+          between Temperature and Anomaly.</span>
+        </Show>
       </div>
     </div>
   );
