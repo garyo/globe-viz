@@ -13,6 +13,7 @@ import {
 } from '../lib/scene/setup';
 import { createCamera, createControls, updateCameraAspect, updateControlsForResize } from '../lib/scene/camera';
 import { createGlobe, updateGlobeTexture } from '../lib/scene/globe';
+import { loadCoastlines, type CoastlineOverlay } from '../lib/scene/coastlines';
 import { fetchDatasetAssets } from '../lib/data/assets';
 import { TextureCache } from '../lib/data/textureCache';
 import { Spherical, Vector3 } from 'three';
@@ -29,6 +30,7 @@ export const GlobeScene = () => {
   let camera: PerspectiveCamera;
   let controls: OrbitControls;
   let globe: Mesh;
+  let coastlines: CoastlineOverlay | undefined;
   let axesHelper: AxesHelper;
   let stats: Stats;
   let animationId: number;
@@ -77,6 +79,20 @@ export const GlobeScene = () => {
       controls = createControls(camera, canvasRef, globe.position);
       controls.autoRotate = appState.autoRotate;
       controls.autoRotateSpeed = appState.autoRotateSpeed;
+
+      // Coastline overlay: subtle screen-space line above the globe surface
+      // (radius 1.001 to avoid z-fighting with the unit-radius sphere).
+      try {
+        coastlines = await loadCoastlines('/coastlines-110m.json', {
+          radius: 1.001,
+          color: 0x202020,
+          linewidth: 1.0,
+          opacity: 0.5,
+        });
+        scene.add(coastlines.line);
+      } catch (err) {
+        console.warn('Failed to load coastlines:', err);
+      }
     }
 
     cleanupFullscreen = setupFullscreenHandlers();
@@ -95,6 +111,7 @@ export const GlobeScene = () => {
     if (cleanupFullscreen) cleanupFullscreen();
     if (cleanupResize) cleanupResize();
     if (cleanupWheelRotate) cleanupWheelRotate();
+    if (coastlines) coastlines.dispose();
     textureCache.clear();
   });
 
@@ -285,6 +302,9 @@ export const GlobeScene = () => {
 
     if (resizeRendererToDisplaySize(renderer)) {
       updateCameraAspect(camera, renderer.domElement);
+      if (coastlines) {
+        coastlines.setResolution(renderer.domElement.width, renderer.domElement.height);
+      }
     }
 
     if (controls) controls.update();
