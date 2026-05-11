@@ -29,6 +29,16 @@ const DATASET_LABELS: Record<DatasetId, { icon: string; short: string; long: str
   t2m: { icon: '🌬', short: '2 m Air', long: '2 m air temperature' },
 };
 
+// Per-source overrides for the short button label. ERA5 sits sst next to t2m,
+// where bare "Temp" is ambiguous — spell out that it's the sea-surface variant.
+const DATASET_SHORT_OVERRIDES: Partial<Record<SourceId, Partial<Record<DatasetId, string>>>> = {
+  era5: { sst: 'Sea Surf Temp' },
+};
+
+function datasetShort(source: SourceId, dataset: DatasetId): string {
+  return DATASET_SHORT_OVERRIDES[source]?.[dataset] ?? DATASET_LABELS[dataset].short;
+}
+
 export const GlobalHeader = () => {
   const switchTab = (id: TabId) => {
     if (appState.activeTab === id) return;
@@ -132,7 +142,7 @@ export const GlobalHeader = () => {
                 title={DATASET_LABELS[d].long}
               >
                 <span class="icon">{DATASET_LABELS[d].icon}</span>
-                <span class="label-mobile-hide">{DATASET_LABELS[d].short}</span>
+                <span class="label-mobile-hide">{datasetShort(appState.source, d)}</span>
               </button>
             )}
           </For>
