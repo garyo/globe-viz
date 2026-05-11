@@ -39,10 +39,11 @@ export const GlobeScene = () => {
   let cleanupResize: (() => void) | undefined;
   let cleanupWheelRotate: (() => void) | undefined;
 
-  // Texture cache to avoid re-fetching from S3 (max a couple of years)
-  const textureCache = new TextureCache(366*2);
+  // Texture cache to avoid re-fetching from S3 (max a couple of years per
+  // (source, dataset) tuple — 2× datasets × 2 years ≈ 1500 entries upper bound).
+  const textureCache = new TextureCache(366 * 2);
 
-  // Track the most recently requested date to avoid displaying stale loads
+  // Track the most recently requested asset to avoid displaying stale loads.
   let currentLoadRequestId = 0;
 
   onMount(async () => {
@@ -65,113 +66,76 @@ export const GlobeScene = () => {
     // Create texture loader (reused for all texture operations)
     textureLoader = createTextureLoader();
 
-    // Load initial globe
-    const dataTexture =
-      appState.dataset === 'Temperature'
-        ? appState.assets.sstTexture
-        : appState.assets.sstAnomalyTexture;
-
-    if (dataTexture) {
-      const result = await createGlobe(textureLoader, dataTexture);
+    // Load initial globe with whatever AppLoader pre-fetched.
+    const initialTexture = appState.assets[appState.dataset]?.texture;
+    if (initialTexture) {
+      const result = await createGlobe(textureLoader, initialTexture);
       globe = result.mesh;
       scene.add(globe);
 
       // Create controls (needs globe position for target)
       controls = createControls(camera, canvasRef, globe.position);
-
-      // Initialize controls with saved state
       controls.autoRotate = appState.autoRotate;
       controls.autoRotateSpeed = appState.autoRotateSpeed;
     }
 
-    // Fullscreen on double-click or double-tap
     cleanupFullscreen = setupFullscreenHandlers();
-
-    // Handle window resize
     cleanupResize = setupResizeHandler();
-
-    // Handle horizontal scroll wheel rotation
     cleanupWheelRotate = setupWheelRotation();
 
-    // Start animation loop
     animate();
   });
 
   onCleanup(() => {
-    if (animationId) {
-      cancelAnimationFrame(animationId);
-    }
-    if (renderer) {
-      renderer.dispose();
-    }
-    if (controls) {
-      controls.dispose();
-    }
-    if (errorTimeout) {
-      clearTimeout(errorTimeout);
-    }
-    if (animationTimeout) {
-      clearTimeout(animationTimeout);
-    }
-    if (cleanupFullscreen) {
-      cleanupFullscreen();
-    }
-    if (cleanupResize) {
-      cleanupResize();
-    }
-    if (cleanupWheelRotate) {
-      cleanupWheelRotate();
-    }
+    if (animationId) cancelAnimationFrame(animationId);
+    if (renderer) renderer.dispose();
+    if (controls) controls.dispose();
+    if (errorTimeout) clearTimeout(errorTimeout);
+    if (animationTimeout) clearTimeout(animationTimeout);
+    if (cleanupFullscreen) cleanupFullscreen();
+    if (cleanupResize) cleanupResize();
+    if (cleanupWheelRotate) cleanupWheelRotate();
     textureCache.clear();
   });
 
-  // React to dataset changes
+  // Swap globe texture instantly when the user toggles dataset.
+  // Source-change is handled by the date-loading effect below (which refetches
+  // because the cache miss yields a network round-trip).
   createEffect(() => {
-    // IMPORTANT: Track reactive values BEFORE any early returns
     const dataset = appState.dataset;
-    const sstTexture = appState.assets.sstTexture;
-    const sstAnomalyTexture = appState.assets.sstAnomalyTexture;
-
-    // Now we can do conditional checks
+    const slot = appState.assets[dataset];
+    const dataTexture = slot?.texture;
     if (!globe) return;
-
-    const dataTexture = dataset === 'Temperature' ? sstTexture : sstAnomalyTexture;
-
-    if (dataTexture) {
-      // No async needed - texture is pre-decoded!
-      updateGlobeTexture(globe, dataTexture);
-    }
+    if (dataTexture) updateGlobeTexture(globe, dataTexture);
   });
 
   // React to auto-rotate changes
   createEffect(() => {
-    // Make sure to track these values
     const autoRotate = appState.autoRotate;
     const autoRotateSpeed = appState.autoRotateSpeed;
-
     if (!controls) return;
     controls.autoRotate = autoRotate;
     controls.autoRotateSpeed = autoRotateSpeed;
   });
 
-  // React to showStats changes
   createEffect(() => {
     if (!stats) return;
     stats.dom.hidden = !appState.showStats;
   });
 
-  // React to showAxes changes
   createEffect(() => {
     if (!axesHelper) return;
     axesHelper.visible = appState.showAxes;
   });
 
-  // React to date changes - load new texture for current dataset only
-  // IMPORTANT: Waits for texture to load before scheduling next animation frame
+  // React to date / source / dataset changes — load fresh texture for the
+  // current (source, dataset, date) tuple. The dataset-toggle effect above
+  // handles in-memory swaps; this one handles fetch-on-cache-miss.
   createEffect(() => {
     // Track reactive values
     const currentDateIndex = appState.currentDateIndex;
     const availableDates = appState.availableDates;
+    const source = appState.source;
     const dataset = appState.dataset;
     const isAnimating = appState.isAnimating;
     const animationSpeed = appState.animationSpeed;
@@ -181,17 +145,19 @@ export const GlobeScene = () => {
     const date = availableDates[currentDateIndex];
     if (!date) return;
 
-    // Seed cache with preloaded assets from initial AppLoader fetch
-    if (!textureCache.has(date, dataset)) {
-      const preloadedTexture =
-        dataset === 'Temperature' ? appState.assets.sstTexture : appState.assets.sstAnomalyTexture;
-      const preloadedMetadata =
-        dataset === 'Temperature' ? appState.assets.sstMetadata : appState.assets.sstAnomalyMetadata;
-
-      if (preloadedTexture && preloadedMetadata?.date === date) {
-        textureCache.set(date, dataset, {
-          texture: preloadedTexture,
-          metadata: preloadedMetadata,
+    // Seed cache with AppLoader's preloaded asset for this date, if it's the
+    // right (source, dataset). Only matches when the user hasn't navigated
+    // away from the initial latest date and source.
+    if (!textureCache.has(date, source, dataset)) {
+      const slot = appState.assets[dataset];
+      if (
+        slot?.texture &&
+        slot.metadata?.date === date &&
+        slot.source === source
+      ) {
+        textureCache.set(date, source, dataset, {
+          texture: slot.texture,
+          metadata: slot.metadata,
         });
       }
     }
@@ -202,55 +168,42 @@ export const GlobeScene = () => {
       animationTimeout = undefined;
     }
 
-    // Load assets for the selected date and current dataset (check cache first)
-    // Increment request ID to track the most recent request
+    // Load assets for the selected (date, source, dataset) — check cache first.
     const requestId = ++currentLoadRequestId;
 
     void (async () => {
       try {
-        let assets = textureCache.get(date, dataset);
+        let assets = textureCache.get(date, source, dataset);
 
         if (!assets) {
-          // Cache miss - fetch only current dataset from S3
-          assets = await fetchDatasetAssets(date, dataset, textureLoader);
-
-          // Pre-decode texture on GPU before caching
+          assets = await fetchDatasetAssets(date, source, dataset, textureLoader);
           renderer.initTexture(assets.texture);
-
-          textureCache.set(date, dataset, assets);
+          textureCache.set(date, source, dataset, assets);
         }
 
-        // Only update display if this is still the most recent request
-        // This prevents stale loads from updating the display during rapid slider dragging
+        // Only update display if this is still the most recent request.
         if (requestId !== currentLoadRequestId) {
-          console.log(`Skipping stale load for ${date} (request ${requestId} vs current ${currentLoadRequestId})`);
+          console.log(`Skipping stale load for ${date}/${source}/${dataset}`);
           return;
         }
 
-        // Update only the current dataset's texture and metadata
-        if (dataset === 'Temperature') {
-          setAppState('assets', 'sstTexture', assets.texture);
-          setAppState('assets', 'sstMetadata', assets.metadata);
-        } else {
-          setAppState('assets', 'sstAnomalyTexture', assets.texture);
-          setAppState('assets', 'sstAnomalyMetadata', assets.metadata);
-        }
+        setAppState('assets', dataset, {
+          texture: assets.texture,
+          metadata: assets.metadata,
+          source,
+        });
 
-        // Clear any previous error
         if (errorTimeout) {
           clearTimeout(errorTimeout);
           errorTimeout = undefined;
         }
         setAppState('missingDateError', null);
 
-        // If animating, schedule next frame AFTER texture loads.
-        // This eliminates race conditions and stuttering
+        // If animating, schedule next frame after this texture loads.
         if (isAnimating && availableDates.length > 1) {
-          // Calculate next frame index
           const nextIndex = (currentDateIndex + 1) % availableDates.length;
           const nextDate = availableDates[nextIndex];
 
-          // Function to advance to next frame
           const advanceFrame = () => {
             setAppState('currentDateIndex', (prev) => {
               const next = prev + 1;
@@ -258,101 +211,68 @@ export const GlobeScene = () => {
             });
           };
 
-          // Check if we're at the last frame - pause for 1 second before looping
           const isAtEnd = currentDateIndex === availableDates.length - 1;
           const baseDelay = isAtEnd ? animationSpeed + 1000 : animationSpeed;
 
-          // Check if next frame is already cached
-          if (textureCache.has(nextDate, dataset)) {
-            // Next frame is ready, advance after normal delay
+          if (textureCache.has(nextDate, source, dataset)) {
             animationTimeout = window.setTimeout(advanceFrame, baseDelay);
           } else {
-            // Next frame not ready yet - wait for it to load before advancing
-            // This prevents jittery animation when cache is cold
             const checkNextFrame = async () => {
               try {
-                // Wait for next frame to be fetched and cached
                 let attempts = 0;
-                const maxAttempts = 100; // 10 seconds max wait
-                while (!textureCache.has(nextDate, dataset) && attempts < maxAttempts) {
-                  await new Promise(resolve => setTimeout(resolve, 100));
+                const maxAttempts = 100; // 10s max wait
+                while (
+                  !textureCache.has(nextDate, source, dataset) &&
+                  attempts < maxAttempts
+                ) {
+                  await new Promise((resolve) => setTimeout(resolve, 100));
                   attempts++;
                 }
-
-                // If we got the frame or timed out, advance
-                if (appState.isAnimating) {
-                  advanceFrame();
-                }
+                if (appState.isAnimating) advanceFrame();
               } catch (err) {
                 console.error('Error waiting for next frame:', err);
-                // Advance anyway to avoid getting stuck
-                if (appState.isAnimating) {
-                  advanceFrame();
-                }
+                if (appState.isAnimating) advanceFrame();
               }
             };
-
-            // Start checking after the base delay
             animationTimeout = window.setTimeout(() => {
               void checkNextFrame();
             }, baseDelay);
           }
         }
       } catch (err) {
-        console.error(`Failed to load ${dataset} for date ${date}:`, err);
-        // Set error state but keep previous texture
+        console.error(`Failed to load ${source}/${dataset} for ${date}:`, err);
         setAppState('missingDateError', `Data unavailable for ${date}`);
-        // Don't update assets - keep showing previous date's texture
-
-        // Auto-clear the error after 3 seconds
-        if (errorTimeout) {
-          clearTimeout(errorTimeout);
-        }
+        if (errorTimeout) clearTimeout(errorTimeout);
         errorTimeout = window.setTimeout(() => {
           setAppState('missingDateError', null);
         }, 3000);
-
-        // On error, stop animation to avoid infinite loop
-        if (isAnimating) {
-          setAppState('isAnimating', false);
-        }
+        if (isAnimating) setAppState('isAnimating', false);
       }
     })();
   });
 
-  // Animation is now handled in the texture loading effect above
-  // This ensures each frame waits for its texture to load before advancing
-  // Eliminates race conditions and stuttering at high frame rates
-
-  // Pre-load next frame when animating (for smooth playback)
-  // Only pre-fetch current dataset to save memory
+  // Pre-load the next date's (source, dataset) tuple while animating.
   createEffect(() => {
     const isAnimating = appState.isAnimating;
     const currentDateIndex = appState.currentDateIndex;
     const availableDates = appState.availableDates;
+    const source = appState.source;
     const dataset = appState.dataset;
 
     if (!isAnimating || availableDates.length <= 1 || !textureLoader || !renderer) return;
 
-    // Calculate next date index
     const nextIndex = (currentDateIndex + 1) % availableDates.length;
     const nextDate = availableDates[nextIndex];
-
     if (!nextDate) return;
 
-    // Pre-load if not already cached (only for current dataset)
-    if (!textureCache.has(nextDate, dataset)) {
+    if (!textureCache.has(nextDate, source, dataset)) {
       void (async () => {
         try {
-          const assets = await fetchDatasetAssets(nextDate, dataset, textureLoader);
-
-          // CRITICAL: Pre-decode texture on GPU NOW, before it's needed
-          // This eliminates decode stutter during animation!
+          const assets = await fetchDatasetAssets(nextDate, source, dataset, textureLoader);
           renderer.initTexture(assets.texture);
-
-          textureCache.set(nextDate, dataset, assets);
-        } catch (err) {
-          // Silently fail - not critical
+          textureCache.set(nextDate, source, dataset, assets);
+        } catch {
+          // Silent: prefetch is best-effort
         }
       })();
     }
@@ -432,23 +352,15 @@ export const GlobeScene = () => {
 
       // Rotate the camera around the globe
       if (controls) {
-        // Prevent default horizontal scroll
         e.preventDefault();
 
-        // Adjust azimuthal angle (rotation around vertical axis)
-        // Positive deltaX = scroll right = rotate globe right (camera moves left)
-        // Scale the rotation speed (geared down for smooth control)
         const rotationSpeed = 0.001;
         const rotationAmount = -e.deltaX * rotationSpeed;
 
-        // Get current spherical coordinates
         const spherical = new Spherical();
         spherical.setFromVector3(camera.position.clone().sub(controls.target));
-
-        // Adjust azimuthal angle (theta)
         spherical.theta += rotationAmount;
 
-        // Convert back to Cartesian and update camera
         const newPosition = new Vector3();
         newPosition.setFromSpherical(spherical);
         newPosition.add(controls.target);

@@ -1,10 +1,8 @@
 import { For, Show, createMemo, createResource } from 'solid-js';
-import { appState, setAppState, saveState } from '../stores/appState';
+import { appState, setAppState, saveState, type DatasetId } from '../stores/appState';
 import { fetchTimeseries, type TimeseriesPayload } from '../lib/data/timeseries';
 import { readThemeColors } from '../lib/timeseriesUtils';
 import { MiniChart } from './MiniChart';
-
-type SourceDataset = 'sst' | 'anom';
 
 const REGION_LABELS: Record<string, string> = {
   global: 'Global',
@@ -30,8 +28,8 @@ const orderRank = (id: string) => {
   return i === -1 ? ORDER.length + id.charCodeAt(0) : i;
 };
 
-const formatValue = (v: number, ds: SourceDataset): string =>
-  ds === 'sst' ? `${v.toFixed(2)} °C` : `Δ ${v.toFixed(2)} °C`;
+const formatValue = (v: number, ds: DatasetId): string =>
+  ds === 'anom' ? `Δ ${v.toFixed(2)} °C` : `${v.toFixed(2)} °C`;
 
 export const TrendsGrid = () => {
   // Fetch every available region's payload in parallel. fetchTimeseries
@@ -49,8 +47,8 @@ export const TrendsGrid = () => {
     }
   );
 
-  const datasetKey = (): SourceDataset =>
-    appState.dataset === 'Temperature' ? 'sst' : 'anom';
+  const sourceKey = () => appState.source;
+  const datasetKey = (): DatasetId => appState.dataset;
 
   // Theme colors: read reactively whenever effectiveTheme flips so MiniChart
   // re-renders with the new palette via its own createEffect.
@@ -89,10 +87,10 @@ export const TrendsGrid = () => {
           <For each={sortedEntries()}>
             {([regionId, payload]) => {
               // Solid's <For> callback runs once per item, so anything that
-              // depends on appState.dataset (i.e. datasetKey) must be wrapped
-              // in a memo to remain reactive across dataset toggles.
+              // depends on appState.source/dataset must be wrapped in a memo
+              // to remain reactive across source/dataset toggles.
               const series = createMemo(
-                () => payload.sources.oisst?.datasets[datasetKey()]
+                () => payload.sources[sourceKey()]?.datasets[datasetKey()]
               );
               const lastVal = () => {
                 const s = series();

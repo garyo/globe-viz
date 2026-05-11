@@ -14,11 +14,15 @@ export const About = () => {
           and see what's happening across the globe and across time.
         </p>
         <p>
-          This application visualizes daily global sea surface temperature data
-          from NASA's OISST (Optimally Interpolated Sea Surface Temperature) dataset.
-          You can view absolute temperatures or temperature anomalies (deviations from
-          the long-term average for that date and location) to see how ocean
-          temperatures are changing over time.
+          This application visualizes daily global temperature data from two
+          independent climate-data sources: NOAA's <strong>OISST</strong>
+          (Optimally Interpolated Sea Surface Temperature) — sea-surface
+          temperatures only — and ECMWF's <strong>ERA5</strong> reanalysis,
+          which adds 2 m air temperature over land. Use the source toggle in
+          the header to switch between them. Within each source you can view
+          absolute temperatures or (for OISST) the temperature anomaly —
+          the deviation from the long-term average for that date and location —
+          to see how ocean temperatures are changing over time.
         </p>
         <p>
           You can see the current state of warming of the global sea surface temperatures,
@@ -55,9 +59,39 @@ export const About = () => {
           </li>
         </ul>
         <p>
-          <strong>Data Source:</strong> NASA OISST daily 0.25° resolution data,
-          processed by the sea-surface-temp-viz project and hosted on AWS S3.
-          The color maps show temperature ranges from cold (blue/purple) to warm (orange/red and beyond).
+          <strong>Data Sources:</strong>
+        </p>
+        <ul>
+          <li>
+            <strong>NOAA OISST</strong> — daily 0.25° gridded sea-surface
+            temperatures, blended from satellite + buoy observations. Used
+            for the SST and Anomaly views.{' '}
+            <a
+              href="https://www.ncei.noaa.gov/products/climate-data-records/sea-surface-temperature-optimum-interpolation"
+              target="_blank"
+              rel="noreferrer"
+            >
+              About OISST
+            </a>.
+          </li>
+          <li>
+            <strong>ECMWF ERA5</strong> — global atmospheric reanalysis at
+            0.25° resolution. We pull SST and 2 m air temperature at 12:00 UTC
+            daily and resample onto the OISST grid so the two sources are
+            directly comparable.{' '}
+            <a
+              href="https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels"
+              target="_blank"
+              rel="noreferrer"
+            >
+              About ERA5
+            </a>.
+          </li>
+        </ul>
+        <p>
+          Both feeds are processed by the upstream climate-data pipeline and
+          hosted on AWS S3. The color maps go from cold (blue/purple) to warm
+          (orange/red and beyond); each dataset has its own appropriate range.
         </p>
 
         <h3 style="margin-top: 1.8em">Regions on the Trends tab</h3>

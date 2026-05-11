@@ -1,9 +1,18 @@
 import { createSignal, onMount, onCleanup, Show, type Component } from 'solid-js';
-import { setAppState, appState } from '../stores/appState';
+import {
+  setAppState,
+  appState,
+  DATASETS_BY_SOURCE,
+  isValidDataset,
+  defaultDatasetFor,
+  type SourceId,
+} from '../stores/appState';
 import { fetchDateIndex, fetchDatasetAssets } from '../lib/data/assets';
 import { TextureLoader } from 'three';
 import { AppTabs } from './AppTabs';
 import { KeyboardControls } from './KeyboardControls';
+
+const KNOWN_SOURCES: SourceId[] = ['oisst', 'era5'];
 
 export const AppLoader: Component = () => {
   const [isLoading, setIsLoading] = createSignal(true);
@@ -34,24 +43,79 @@ export const AppLoader: Component = () => {
         setAppState('region', regionsList.includes('global') ? 'global' : regionsList[0]);
       }
 
-      // Set current date to the latest (last in the array)
-      const latestIndex = dateIndex.dates.length - 1;
-      setAppState('currentDateIndex', latestIndex >= 0 ? latestIndex : 0);
+      // Available sources, filtered through KNOWN_SOURCES so an unknown source
+      // ID from index.json doesn't get persisted as a selection we can't render.
+      const indexSources = (dateIndex.timeseries?.sources ?? []).filter(
+        (s): s is SourceId => (KNOWN_SOURCES as string[]).includes(s),
+      );
+      const sourcesList: SourceId[] = indexSources.length > 0 ? indexSources : ['oisst'];
+      setAppState('availableSources', sourcesList);
 
-      // Fetch assets for the latest date
-      // Load both datasets initially to have metadata for colormap
-      const latestDate = dateIndex.latest;
-      const [tempAssets, anomalyAssets] = await Promise.all([
-        fetchDatasetAssets(latestDate, 'Temperature', textureLoader),
-        fetchDatasetAssets(latestDate, 'Temp Anomaly', textureLoader),
-      ]);
+      // Per-source dated-texture sets. Falls back to the union (dateIndex.dates)
+      // for sources without an explicit entry — covers older index.json shapes.
+      for (const src of KNOWN_SOURCES) {
+        const meta = dateIndex.sources?.[src];
+        setAppState('sourceDates', src, meta?.dates ?? dateIndex.dates);
+      }
 
-      setAppState('assets', {
-        sstTexture: tempAssets.texture,
-        sstMetadata: tempAssets.metadata,
-        sstAnomalyTexture: anomalyAssets.texture,
-        sstAnomalyMetadata: anomalyAssets.metadata,
-      });
+      // Reconcile persisted source against what's actually available.
+      if (!sourcesList.includes(appState.source)) {
+        setAppState('source', sourcesList.includes('oisst') ? 'oisst' : sourcesList[0]);
+      }
+      // Reconcile persisted dataset against the current source.
+      if (!isValidDataset(appState.source, appState.dataset)) {
+        setAppState('dataset', defaultDatasetFor(appState.source));
+      }
+
+      // Pick an initial date: the chosen source's latest date if known,
+      // otherwise the union latest. This matters when the chosen source
+      // lags behind OISST (ERA5's ~5-day reanalysis latency).
+      const sourceMeta = dateIndex.sources?.[appState.source];
+      const initialDate: string = sourceMeta?.latest ?? dateIndex.latest;
+      const initialIndex = dateIndex.dates.indexOf(initialDate);
+      setAppState(
+        'currentDateIndex',
+        initialIndex >= 0 ? initialIndex : Math.max(0, dateIndex.dates.length - 1),
+      );
+
+      // Fetch both of the current source's datasets so toggling between them
+      // is instant. GlobeScene takes over after this for date-driven loads.
+      // If the chosen source can't be fetched (e.g. stale localStorage points
+      // at a (source, date) combination that doesn't exist on S3), fall back
+      // to OISST so the user always sees *something*.
+      let source = appState.source;
+      let datasets = DATASETS_BY_SOURCE[source];
+      let fetchDate = initialDate;
+      let slotResults;
+      try {
+        slotResults = await Promise.all(
+          datasets.map((ds) => fetchDatasetAssets(fetchDate, source, ds, textureLoader)),
+        );
+      } catch (e) {
+        console.warn(
+          `Initial fetch failed for ${source}@${fetchDate}; falling back to oisst:`, e,
+        );
+        source = 'oisst';
+        datasets = DATASETS_BY_SOURCE[source];
+        fetchDate = dateIndex.latest;
+        const fallbackIdx = dateIndex.dates.indexOf(fetchDate);
+        setAppState('source', source);
+        setAppState('currentDateIndex', fallbackIdx >= 0 ? fallbackIdx : 0);
+        if (!isValidDataset(source, appState.dataset)) {
+          setAppState('dataset', defaultDatasetFor(source));
+        }
+        slotResults = await Promise.all(
+          datasets.map((ds) => fetchDatasetAssets(fetchDate, source, ds, textureLoader)),
+        );
+      }
+      for (let i = 0; i < datasets.length; i++) {
+        const ds = datasets[i];
+        setAppState('assets', ds, {
+          texture: slotResults[i].texture,
+          metadata: slotResults[i].metadata,
+          source,
+        });
+      }
 
       // Note: After initial load, GlobeScene will handle on-demand loading
       // of only the current dataset to save memory

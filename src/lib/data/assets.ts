@@ -1,4 +1,4 @@
-import type { Metadata } from '../../stores/appState';
+import type { Metadata, SourceId, DatasetId } from '../../stores/appState';
 import { TextureLoader, LinearSRGBColorSpace, type Texture } from 'three';
 
 const BUCKET_URL = 'https://climate-change-assets.s3.amazonaws.com/sea-surface-temp/';
@@ -9,19 +9,18 @@ export interface DatasetAssets {
   metadata: Metadata;
 }
 
-// Legacy interface for backward compatibility during migration
-export interface Assets {
-  sstTexture: Texture;
-  sstMetadata: Metadata;
-  sstAnomalyTexture: Texture;
-  sstAnomalyMetadata: Metadata;
+export interface SourceDateMeta {
+  dates: string[];   // Dated textures that exist for this source
+  latest: string | null;
 }
 
 export interface DateIndex {
-  dates: string[];  // Array of 'YYYY-MM-DD' strings
-  latest: string;   // Most recent date
+  dates: string[];  // Union of dated textures across all sources
+  latest: string;   // Most recent date (OISST's latest, for back-compat)
+  sources?: { [sourceId: string]: SourceDateMeta };
   timeseries?: {
-    regions: string[];  // Region IDs available under timeseries/<id>.json
+    regions: string[];   // Region IDs available under timeseries/<id>.json
+    sources?: string[];  // Source IDs present in the timeseries JSONs
   };
 }
 
@@ -37,34 +36,45 @@ export async function fetchDateIndex(): Promise<DateIndex> {
 }
 
 /**
- * Fetch assets for a specific dataset and date
- * Only fetches the requested dataset to save memory
- * @param date - Optional date string in YYYY-MM-DD format. If not provided, fetches latest (non-dated) files
- * @param dataset - Which dataset to fetch: 'Temperature' or 'Temp Anomaly'
- * @param textureLoader - Three.js TextureLoader instance for loading textures
+ * Build the equirect texture URL stem (without `.webp` / `-metadata.json`) for
+ * a given (source, dataset, date). OISST keeps its legacy unprefixed naming
+ * (`<date>-sst-temp-equirect`, `<date>-sst-temp-anomaly-equirect`) so old
+ * client deployments and bookmarks keep working; newer sources use a uniform
+ * `<date>-<source>-<dataset>-equirect` scheme.
+ */
+function equirectStem(source: SourceId, dataset: DatasetId, date: string | undefined): string {
+  const datePrefix = date ? `${date}-` : '';
+  if (source === 'oisst') {
+    const suffix = dataset === 'sst' ? 'sst-temp' : 'sst-temp-anomaly';
+    return `${datePrefix}${suffix}-equirect`;
+  }
+  return `${datePrefix}${source}-${dataset}-equirect`;
+}
+
+/**
+ * Fetch assets for a specific source × dataset × date.
+ * @param date - Optional date string in YYYY-MM-DD format. If not provided, fetches latest (non-dated) files.
+ * @param source - Which source to fetch ('oisst', 'era5', ...).
+ * @param dataset - Which dataset to fetch ('sst', 'anom', 't2m').
+ * @param textureLoader - Three.js TextureLoader instance for loading textures.
  */
 export async function fetchDatasetAssets(
   date: string | undefined,
-  dataset: 'Temperature' | 'Temp Anomaly',
+  source: SourceId,
+  dataset: DatasetId,
   textureLoader: TextureLoader
 ): Promise<DatasetAssets> {
-  // If date is provided, use date-prefixed filenames
-  const prefix = date ? `${date}-` : '';
-
-  // Determine which files to fetch based on dataset
-  const isTemperature = dataset === 'Temperature';
-  const suffix = isTemperature ? 'sst-temp-equirect' : 'sst-temp-anomaly-equirect';
-
-  const textureUrl = BUCKET_URL + `${prefix}${suffix}.webp`;
-  const metadataUrl = BUCKET_URL + `${prefix}${suffix}-metadata.json`;
+  const stem = equirectStem(source, dataset, date);
+  const textureUrl = BUCKET_URL + `${stem}.webp`;
+  const metadataUrl = BUCKET_URL + `${stem}-metadata.json`;
 
   const [textureBlob, metadata] = await Promise.all([
     fetch(textureUrl).then(async (res) => {
-      if (!res.ok) throw new Error(`Failed to fetch ${dataset} texture: ${res.statusText}`);
+      if (!res.ok) throw new Error(`Failed to fetch ${source}/${dataset} texture: ${res.statusText}`);
       return res.blob();
     }),
     fetch(metadataUrl).then(async (res) => {
-      if (!res.ok) throw new Error(`Failed to fetch ${dataset} metadata: ${res.statusText}`);
+      if (!res.ok) throw new Error(`Failed to fetch ${source}/${dataset} metadata: ${res.statusText}`);
       return res.json();
     }),
   ]);
@@ -77,48 +87,11 @@ export async function fetchDatasetAssets(
   texture.colorSpace = LinearSRGBColorSpace;
   texture.userData.objectUrl = textureUrl_obj;
   texture.userData.date = date;
+  texture.userData.source = source;
   texture.userData.dataset = dataset;
 
   return {
     texture,
     metadata,
-  };
-}
-
-/**
- * Fetch assets for a specific date (LEGACY - fetches both datasets)
- * Creates Three.js Texture objects immediately to avoid decode during rendering
- * @param date - Optional date string in YYYY-MM-DD format. If not provided, fetches latest (non-dated) files
- * @param textureLoader - Three.js TextureLoader instance for loading textures
- * @deprecated Use fetchDatasetAssets instead to save memory
- */
-export async function fetchAssetsForDate(date: string | undefined, textureLoader: TextureLoader): Promise<Assets> {
-  const [tempAssets, anomalyAssets] = await Promise.all([
-    fetchDatasetAssets(date, 'Temperature', textureLoader),
-    fetchDatasetAssets(date, 'Temp Anomaly', textureLoader),
-  ]);
-
-  return {
-    sstTexture: tempAssets.texture,
-    sstMetadata: tempAssets.metadata,
-    sstAnomalyTexture: anomalyAssets.texture,
-    sstAnomalyMetadata: anomalyAssets.metadata,
-  };
-}
-
-/**
- * Fetch the latest assets (backward compatibility)
- */
-export async function fetchAssets(textureLoader: TextureLoader): Promise<Assets> {
-  const [tempAssets, anomalyAssets] = await Promise.all([
-    fetchDatasetAssets(undefined, 'Temperature', textureLoader),
-    fetchDatasetAssets(undefined, 'Temp Anomaly', textureLoader),
-  ]);
-
-  return {
-    sstTexture: tempAssets.texture,
-    sstMetadata: tempAssets.metadata,
-    sstAnomalyTexture: anomalyAssets.texture,
-    sstAnomalyMetadata: anomalyAssets.metadata,
   };
 }

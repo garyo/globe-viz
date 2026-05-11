@@ -1,5 +1,5 @@
 import { onMount, onCleanup } from 'solid-js';
-import { appState, setAppState, saveState } from '../stores/appState';
+import { appState, setAppState, saveState, DATASETS_BY_SOURCE } from '../stores/appState';
 
 export const KeyboardControls = () => {
   onMount(() => {
@@ -61,13 +61,15 @@ export const KeyboardControls = () => {
           setAppState('autoRotate', !appState.autoRotate);
           break;
 
-        case 't': // T - toggle dataset
+        case 't': { // T - toggle dataset within the current source
           e.preventDefault();
-          const newDataset = appState.dataset === 'Temperature'
-            ? 'Temp Anomaly'
-            : 'Temperature';
-          setAppState('dataset', newDataset);
+          const datasets = DATASETS_BY_SOURCE[appState.source];
+          const idx = datasets.indexOf(appState.dataset);
+          const next = datasets[(idx + 1) % datasets.length];
+          setAppState('dataset', next);
+          saveState();
           break;
+        }
 
         case '?': // ? - open About tab
           e.preventDefault();

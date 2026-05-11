@@ -1,10 +1,10 @@
 import type { DatasetAssets } from './assets';
+import type { SourceId, DatasetId } from '../../stores/appState';
 
 /**
- * LRU cache for dataset texture assets to avoid re-fetching from S3
- * Stores individual dataset textures with keys: "${date}-${dataset}"
- * This saves 50% memory by only caching what's actually used
- * Properly disposes of Three.js textures and Object URLs to prevent memory leaks
+ * LRU cache for dataset texture assets to avoid re-fetching from S3.
+ * Stores individual dataset textures keyed by (date, source, dataset).
+ * Properly disposes of Three.js textures and Object URLs to prevent memory leaks.
  */
 export class TextureCache {
   private cache: Map<string, DatasetAssets>;
@@ -15,16 +15,10 @@ export class TextureCache {
     this.maxSize = maxSize;
   }
 
-  /**
-   * Create cache key from date and dataset
-   */
-  private getCacheKey(date: string, dataset: 'Temperature' | 'Temp Anomaly'): string {
-    return `${date}-${dataset}`;
+  private getCacheKey(date: string, source: SourceId, dataset: DatasetId): string {
+    return `${date}-${source}-${dataset}`;
   }
 
-  /**
-   * Dispose of texture and clean up Object URL in a DatasetAssets object
-   */
   private disposeAssets(assets: DatasetAssets): void {
     if (assets.texture && assets.texture.userData.objectUrl) {
       URL.revokeObjectURL(assets.texture.userData.objectUrl);
@@ -33,11 +27,11 @@ export class TextureCache {
   }
 
   /**
-   * Get assets for a date and dataset from cache, or undefined if not cached
-   * Marks the entry as recently used (moves to end)
+   * Get assets for a (date, source, dataset) from cache, or undefined if not cached.
+   * Marks the entry as recently used (moves to end).
    */
-  get(date: string, dataset: 'Temperature' | 'Temp Anomaly'): DatasetAssets | undefined {
-    const key = this.getCacheKey(date, dataset);
+  get(date: string, source: SourceId, dataset: DatasetId): DatasetAssets | undefined {
+    const key = this.getCacheKey(date, source, dataset);
     const assets = this.cache.get(key);
     if (assets) {
       // Move to end (most recently used)
@@ -48,11 +42,11 @@ export class TextureCache {
   }
 
   /**
-   * Store assets for a date and dataset in the cache
-   * Evicts LRU entry if cache is full
+   * Store assets for a (date, source, dataset) in the cache.
+   * Evicts LRU entry if cache is full.
    */
-  set(date: string, dataset: 'Temperature' | 'Temp Anomaly', assets: DatasetAssets): void {
-    const key = this.getCacheKey(date, dataset);
+  set(date: string, source: SourceId, dataset: DatasetId, assets: DatasetAssets): void {
+    const key = this.getCacheKey(date, source, dataset);
 
     // If already exists, dispose old assets first
     if (this.cache.has(key)) {
@@ -81,14 +75,14 @@ export class TextureCache {
   }
 
   /**
-   * Check if a date and dataset is in the cache
+   * Check if a (date, source, dataset) is in the cache.
    */
-  has(date: string, dataset: 'Temperature' | 'Temp Anomaly'): boolean {
-    return this.cache.has(this.getCacheKey(date, dataset));
+  has(date: string, source: SourceId, dataset: DatasetId): boolean {
+    return this.cache.has(this.getCacheKey(date, source, dataset));
   }
 
   /**
-   * Clear all cached entries and dispose of textures
+   * Clear all cached entries and dispose of textures.
    */
   clear(): void {
     for (const assets of this.cache.values()) {
@@ -97,9 +91,6 @@ export class TextureCache {
     this.cache.clear();
   }
 
-  /**
-   * Get current cache size
-   */
   get size(): number {
     return this.cache.size;
   }

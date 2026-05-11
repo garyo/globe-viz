@@ -15,6 +15,35 @@ export type TabId = 'globe' | 'trends' | 'about';
 export type ThemePref = 'light' | 'dark' | 'system';
 export type EffectiveTheme = 'light' | 'dark';
 
+// Climate-data sources defined upstream in sea-surface-temp-viz/sources/.
+export type SourceId = 'oisst' | 'era5';
+// Raw dataset IDs as they appear in cache keys + S3 filenames + timeseries
+// JSONs. OISST exposes (sst, anom); ERA5 exposes (sst, t2m). The available
+// dataset list is source-specific — see DATASETS_BY_SOURCE.
+export type DatasetId = 'sst' | 'anom' | 't2m';
+
+/** Per-source list of datasets, mirroring upstream sources/{oisst,era5}.py. */
+export const DATASETS_BY_SOURCE: Record<SourceId, DatasetId[]> = {
+  oisst: ['sst', 'anom'],
+  era5: ['sst', 't2m'],
+};
+
+/** True when this (source, dataset) combination actually exists. */
+export function isValidDataset(source: SourceId, dataset: DatasetId): boolean {
+  return DATASETS_BY_SOURCE[source].includes(dataset);
+}
+
+/** Fall back to the source's first dataset when the current one is invalid for it. */
+export function defaultDatasetFor(source: SourceId): DatasetId {
+  return DATASETS_BY_SOURCE[source][0];
+}
+
+export interface AssetSlot {
+  texture: Texture | null;
+  metadata: Metadata;
+  source: SourceId | null;  // tracks which source this slot was loaded for
+}
+
 export interface AppState {
   // Active top-level tab
   activeTab: TabId;
@@ -23,8 +52,18 @@ export interface AppState {
   themePref: ThemePref;
   effectiveTheme: EffectiveTheme;
 
-  // Dataset selection
-  dataset: 'Temperature' | 'Temp Anomaly';
+  // Active data source (e.g. 'oisst', 'era5'). Persisted; reconciled against
+  // availableSources on load.
+  source: SourceId;
+  availableSources: SourceId[];
+
+  // Per-source set of dates that actually have a texture in S3. Used to snap
+  // currentDateIndex to a valid date when the user switches source, since the
+  // sources have different latencies (OISST: ~2 days, ERA5: ~5–7 days).
+  sourceDates: Record<SourceId, string[]>;
+
+  // Active dataset within the source. Raw ID matching cache-key segment.
+  dataset: DatasetId;
 
   // Globe appearance
   landColor: string;
@@ -37,13 +76,9 @@ export interface AppState {
   showStats: boolean;
   showAxes: boolean;
 
-  // Data
-  assets: {
-    sstTexture: Texture | null;
-    sstMetadata: Metadata;
-    sstAnomalyTexture: Texture | null;
-    sstAnomalyMetadata: Metadata;
-  };
+  // Data: per-dataset texture + metadata slots, scoped to the current source.
+  // When source changes, every slot whose `source` doesn't match is reloaded.
+  assets: Record<DatasetId, AssetSlot>;
 
   // Date/time navigation
   availableDates: string[];  // Array of 'YYYY-MM-DD' strings
@@ -78,21 +113,29 @@ const defaultMetadata: Metadata = {
   day: 0,
 };
 
+const emptySlot = (): AssetSlot => ({
+  texture: null,
+  metadata: { ...defaultMetadata },
+  source: null,
+});
+
 const initialState: AppState = {
   activeTab: 'globe',
   themePref: 'system',
   effectiveTheme: 'dark',
-  dataset: 'Temp Anomaly',
+  source: 'oisst',
+  availableSources: ['oisst'],
+  sourceDates: { oisst: [], era5: [] },
+  dataset: 'anom',
   landColor: '#aaaaaa',
   autoRotate: false,
   autoRotateSpeed: 0.5,
   showStats: false,
   showAxes: false,
   assets: {
-    sstTexture: null,
-    sstMetadata: { ...defaultMetadata },
-    sstAnomalyTexture: null,
-    sstAnomalyMetadata: { ...defaultMetadata },
+    sst: emptySlot(),
+    anom: emptySlot(),
+    t2m: emptySlot(),
   },
   availableDates: [],
   currentDateIndex: 0,
@@ -127,6 +170,7 @@ function loadSavedState(): Partial<AppState> {
       const KEYS = [
         'activeTab',
         'themePref',
+        'source',
         'dataset',
         'landColor',
         'autoRotate',
@@ -139,6 +183,10 @@ function loadSavedState(): Partial<AppState> {
       for (const k of KEYS) {
         if (parsed[k] !== undefined) (restored as Record<string, unknown>)[k] = parsed[k];
       }
+      // Migrate legacy `dataset` values from pre-ERA5 builds.
+      const legacyDataset = restored.dataset as unknown;
+      if (legacyDataset === 'Temperature') restored.dataset = 'sst';
+      else if (legacyDataset === 'Temp Anomaly') restored.dataset = 'anom';
       return restored;
     } catch (e) {
       console.error('Failed to load saved state:', e);
@@ -171,6 +219,7 @@ export function saveState() {
     const toSave = {
       activeTab: appState.activeTab,
       themePref: appState.themePref,
+      source: appState.source,
       dataset: appState.dataset,
       landColor: appState.landColor,
       autoRotate: appState.autoRotate,

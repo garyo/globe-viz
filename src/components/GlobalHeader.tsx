@@ -1,5 +1,15 @@
-import { For } from 'solid-js';
-import { appState, setAppState, saveState, type TabId } from '../stores/appState';
+import { For, Show } from 'solid-js';
+import {
+  appState,
+  setAppState,
+  saveState,
+  DATASETS_BY_SOURCE,
+  isValidDataset,
+  defaultDatasetFor,
+  type TabId,
+  type SourceId,
+  type DatasetId,
+} from '../stores/appState';
 import { ThemeSwitcher } from './controls/ThemeSwitcher';
 
 const TABS: { id: TabId; label: string }[] = [
@@ -8,10 +18,16 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'about', label: 'About' },
 ];
 
-const DATASETS: { id: 'Temperature' | 'Temp Anomaly'; label: string; icon: string }[] = [
-  { id: 'Temperature', label: 'Temp', icon: '🌡' },
-  { id: 'Temp Anomaly', label: 'Anomaly', icon: 'Δ' },
-];
+const SOURCE_LABELS: Record<SourceId, { short: string; full: string }> = {
+  oisst: { short: 'OISST', full: 'NOAA OISST' },
+  era5: { short: 'ERA5', full: 'ECMWF ERA5' },
+};
+
+const DATASET_LABELS: Record<DatasetId, { icon: string; short: string; long: string }> = {
+  sst: { icon: '🌡', short: 'Temp', long: 'Sea-surface temperature' },
+  anom: { icon: 'Δ', short: 'Anomaly', long: 'SST anomaly vs. 1971–2000 mean' },
+  t2m: { icon: '🌬', short: '2 m Air', long: '2 m air temperature' },
+};
 
 export const GlobalHeader = () => {
   const switchTab = (id: TabId) => {
@@ -20,11 +36,46 @@ export const GlobalHeader = () => {
     saveState();
   };
 
-  const selectDataset = (id: typeof DATASETS[number]['id']) => {
+  const selectDataset = (id: DatasetId) => {
     if (appState.dataset === id) return;
     setAppState('dataset', id);
     saveState();
   };
+
+  const selectSource = (id: SourceId) => {
+    if (appState.source === id) return;
+    setAppState('source', id);
+
+    // Reconcile dataset: fall back to the source's first dataset (sst) if the
+    // current dataset doesn't exist for this source.
+    if (!isValidDataset(id, appState.dataset)) {
+      setAppState('dataset', defaultDatasetFor(id));
+    }
+
+    // Reconcile date: ERA5 has ~5-day reanalysis latency vs OISST's ~2 days,
+    // so the latest few dates may not exist for the source we just switched to.
+    // Snap to the most recent date in the source's set that's ≤ the current
+    // date; if none exist, fall back to that source's latest.
+    const srcDates = appState.sourceDates[id];
+    if (srcDates && srcDates.length > 0) {
+      const currentDate = appState.availableDates[appState.currentDateIndex];
+      if (currentDate && !srcDates.includes(currentDate)) {
+        // findLast not in all TS lib targets; walk the (sorted) array.
+        let candidate: string | undefined;
+        for (let i = srcDates.length - 1; i >= 0; i--) {
+          if (srcDates[i] <= currentDate) { candidate = srcDates[i]; break; }
+        }
+        const snapDate = candidate ?? srcDates[srcDates.length - 1];
+        const idx = appState.availableDates.indexOf(snapDate);
+        if (idx >= 0) setAppState('currentDateIndex', idx);
+      }
+    }
+
+    saveState();
+  };
+
+  // Datasets to show in the toggle depend on the active source.
+  const datasetsForSource = () => DATASETS_BY_SOURCE[appState.source];
 
   return (
     <header class="global-header">
@@ -48,20 +99,40 @@ export const GlobalHeader = () => {
       </nav>
 
       <div class="global-controls">
+        <Show when={appState.availableSources.length > 1}>
+          <div class="segmented" role="radiogroup" aria-label="Source">
+            <For each={appState.availableSources}>
+              {(s) => (
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={appState.source === s}
+                  aria-label={SOURCE_LABELS[s].full}
+                  classList={{ active: appState.source === s }}
+                  onClick={() => selectSource(s)}
+                  title={SOURCE_LABELS[s].full}
+                >
+                  <span class="label">{SOURCE_LABELS[s].short}</span>
+                </button>
+              )}
+            </For>
+          </div>
+        </Show>
+
         <div class="segmented" role="radiogroup" aria-label="Dataset">
-          <For each={DATASETS}>
+          <For each={datasetsForSource()}>
             {(d) => (
               <button
                 type="button"
                 role="radio"
-                aria-checked={appState.dataset === d.id}
-                aria-label={d.id}
-                classList={{ active: appState.dataset === d.id }}
-                onClick={() => selectDataset(d.id)}
-                title={d.id}
+                aria-checked={appState.dataset === d}
+                aria-label={DATASET_LABELS[d].long}
+                classList={{ active: appState.dataset === d }}
+                onClick={() => selectDataset(d)}
+                title={DATASET_LABELS[d].long}
               >
-                <span class="icon">{d.icon}</span>
-                <span class="label-mobile-hide">{d.label}</span>
+                <span class="icon">{DATASET_LABELS[d].icon}</span>
+                <span class="label-mobile-hide">{DATASET_LABELS[d].short}</span>
               </button>
             )}
           </For>

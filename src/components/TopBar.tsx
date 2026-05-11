@@ -7,12 +7,9 @@ export const TopBar = () => {
   let lastConfig: ColormapConfig | null = null;
 
   const colormapConfig = createMemo(() => {
-    if (!appState.assets.sstMetadata.cmap.length) return null;
-    return getColormapConfig(
-      appState.dataset,
-      appState.assets.sstMetadata,
-      appState.assets.sstAnomalyMetadata,
-    );
+    const slot = appState.assets[appState.dataset];
+    if (!slot?.metadata?.cmap?.length) return null;
+    return getColormapConfig(appState.dataset, slot.metadata);
   });
 
   onMount(() => {
@@ -39,13 +36,8 @@ export const TopBar = () => {
     a.ranges.every((val, idx) => val === b.ranges[idx]);
 
   const getDate = () => {
-    if (appState.dataset === 'Temperature' && appState.assets.sstMetadata.date) {
-      return appState.assets.sstMetadata.date;
-    }
-    if (appState.dataset === 'Temp Anomaly' && appState.assets.sstAnomalyMetadata.date) {
-      return appState.assets.sstAnomalyMetadata.date;
-    }
-    return 'Loading…';
+    const slot = appState.assets[appState.dataset];
+    return slot?.metadata?.date || 'Loading…';
   };
 
   return (

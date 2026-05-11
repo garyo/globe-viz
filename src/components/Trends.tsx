@@ -12,7 +12,7 @@ import {
 } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import type { EChartsOption } from 'echarts';
-import { appState, setAppState, saveState } from '../stores/appState';
+import { appState, setAppState, saveState, type SourceId, type DatasetId } from '../stores/appState';
 import { fetchTimeseries, type TimeseriesPayload } from '../lib/data/timeseries';
 import {
   type ThemeColors,
@@ -51,7 +51,22 @@ echarts.use([
   CanvasRenderer,
 ]);
 
-type SourceDataset = 'sst' | 'anom';
+const SOURCE_LABELS: Record<SourceId, string> = {
+  oisst: 'NOAA OISST',
+  era5: 'ECMWF ERA5',
+};
+
+const DATASET_AXIS_LABELS: Record<DatasetId, string> = {
+  sst: 'SST (°C)',
+  anom: 'Anomaly vs. 1971–2000 mean (°C)',
+  t2m: '2 m Air Temp (°C)',
+};
+
+const DATASET_TITLE_FRAGMENT: Record<DatasetId, string> = {
+  sst: 'Sea Surface Temperature',
+  anom: 'SST Anomaly vs. 1971–2000 mean',
+  t2m: '2 m Air Temperature',
+};
 
 function findRecord(yearsSeries: YearSeries[]): { year: number; doy: number; value: number } | null {
   let best: { year: number; doy: number; value: number } | null = null;
@@ -65,12 +80,19 @@ function findRecord(yearsSeries: YearSeries[]): { year: number; doy: number; val
 
 function buildOption(
   payload: TimeseriesPayload,
-  dataset: SourceDataset,
+  source: SourceId,
+  dataset: DatasetId,
   c: ThemeColors,
 ): EChartsOption {
-  const series = payload.sources.oisst?.datasets[dataset];
+  const series = payload.sources[source]?.datasets[dataset];
   if (!series) {
-    return { title: { text: 'No data', left: 'center', textStyle: { color: c.text } } };
+    return {
+      title: {
+        text: `No ${SOURCE_LABELS[source]} ${dataset} data for this region`,
+        left: 'center',
+        textStyle: { color: c.text },
+      },
+    };
   }
 
   const years = groupByYear(series);
@@ -118,12 +140,9 @@ function buildOption(
     };
   });
 
-  const datasetLabel = dataset === 'sst' ? 'SST (°C)' : 'Anomaly vs. 1971–2000 mean (°C)';
+  const datasetLabel = DATASET_AXIS_LABELS[dataset];
   const regionLabel = payload.region_label || REGION_LABELS[payload.region] || payload.region;
-  const title =
-    dataset === 'sst'
-      ? `${regionLabel} — Sea Surface Temperature, ${firstYear}–${lastYear}`
-      : `${regionLabel} — SST Anomaly vs. 1971–2000 mean, ${firstYear}–${lastYear}`;
+  const title = `${regionLabel} — ${DATASET_TITLE_FRAGMENT[dataset]}, ${firstYear}–${lastYear}`;
 
   // Match the static graph's labeling: the two oldest years and the five
   // most recent (current year + four prior). Newest first so the current
@@ -185,7 +204,7 @@ function buildOption(
     animation: false,
     title: {
       text: title,
-      subtext: `Source: NOAA OISST · area-weighted average · ${series.dates.length.toLocaleString()} daily values`,
+      subtext: `Source: ${SOURCE_LABELS[source]} · area-weighted average · ${series.dates.length.toLocaleString()} daily values`,
       left: 'center',
       textStyle: { color: c.text, fontSize: 16 },
       subtextStyle: { color: c.subtitle, fontSize: 11 },
@@ -280,8 +299,8 @@ export const Trends = () => {
 
   const [payload] = createResource(region, fetchTimeseries);
 
-  const datasetKey = (): SourceDataset =>
-    appState.dataset === 'Temperature' ? 'sst' : 'anom';
+  const sourceKey = (): SourceId => appState.source;
+  const datasetKey = (): DatasetId => appState.dataset;
 
   onMount(() => {
     if (!chartRef) return;
@@ -296,11 +315,12 @@ export const Trends = () => {
     chart = undefined;
   });
 
-  // Re-render when payload, dataset, or theme changes. effectiveTheme is the
+  // Re-render when payload, source, dataset, or theme changes. effectiveTheme is the
   // resolved 'light' | 'dark', so this also fires when the user switches the
   // pref or the OS theme changes (via applyTheme).
   createEffect(() => {
     const data = payload();
+    const src = sourceKey();
     const ds = datasetKey();
     // Read effectiveTheme to take a reactive dependency on it; the colors
     // we then read via getComputedStyle reflect whichever data-theme the
@@ -308,7 +328,7 @@ export const Trends = () => {
     appState.effectiveTheme;
     if (!chart || !data) return;
     const colors = readThemeColors();
-    chart.setOption(buildOption(data, ds, colors), true);
+    chart.setOption(buildOption(data, src, ds, colors), true);
   });
 
   // Chart and grid are both mounted at all times (display-toggled by the
@@ -397,12 +417,12 @@ export const Trends = () => {
         <Show
           when={appState.trendsMode === 'single'}
           fallback={
-            <span>Click any region to expand. Use the Dataset toggle in the header to switch between Temperature and Anomaly.</span>
+            <span>Click any region to expand. Use the Source and Dataset toggles in the header to switch between OISST/ERA5 and their available datasets.</span>
           }
         >
           <span>Drag the slider below the chart to zoom in time of year. Scroll inside the chart
-          to zoom; shift-scroll to pan. Use the Dataset toggle in the header to switch
-          between Temperature and Anomaly.</span>
+          to zoom; shift-scroll to pan. Use the Source and Dataset toggles in the header to switch
+          between OISST/ERA5 and their available datasets.</span>
         </Show>
       </div>
     </div>
