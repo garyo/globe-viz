@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createResource, onCleanup, onMount } from 'solid-js';
+import { For, Show, createEffect, createResource, createSignal, onCleanup, onMount } from 'solid-js';
 import * as echarts from 'echarts/core';
 import { LineChart } from 'echarts/charts';
 import {
@@ -83,6 +83,7 @@ function buildOption(
   source: SourceId,
   dataset: DatasetId,
   c: ThemeColors,
+  selectedYear: number | null,
 ): EChartsOption {
   const series = payload.sources[source]?.datasets[dataset];
   if (!series) {
@@ -122,6 +123,10 @@ function buildOption(
       color = c.yearPrev2;
       lineWidth = 1.2;
       z = 8;
+    }
+    if (s.year === selectedYear) {
+      lineWidth = Math.max(lineWidth, 4);
+      z = 100;
     }
     return {
       name: String(s.year),
@@ -302,11 +307,69 @@ export const Trends = () => {
   const sourceKey = (): SourceId => appState.source;
   const datasetKey = (): DatasetId => appState.dataset;
 
+  // Click-to-highlight: stores the year the user last clicked, or null for
+  // "no manual highlight" (only the default current/prev-year styling applies).
+  const [selectedYear, setSelectedYear] = createSignal<number | null>(null);
+
   onMount(() => {
     if (!chartRef) return;
     chart = echarts.init(chartRef, undefined, { renderer: 'canvas' });
     resizeHandler = () => chart?.resize();
     window.addEventListener('resize', resizeHandler);
+
+    // Listen at the renderer level. The chart-level 'click' fires through
+    // ECharts' hit-testing, which struggles to register clicks on thin
+    // lines even with `triggerLineEvent`, and the `inside` dataZoom can
+    // interfere. zrender clicks fire on any canvas pixel; we map the pixel
+    // to a (doy, value) coord and find the closest year ourselves.
+    chart.getZr().on('click', (event) => {
+      const c = chart;
+      if (!c) return;
+      const pixel = [event.offsetX, event.offsetY];
+      if (!c.containPixel({ gridIndex: 0 }, pixel)) return;
+      const dataCoord = c.convertFromPixel({ gridIndex: 0 }, pixel) as [number, number];
+      const [doy, val] = dataCoord;
+      const opt = c.getOption() as { series?: Array<{ name?: string; data?: Array<[number, number]> }> };
+      const seriesList = opt.series ?? [];
+
+      // For each series, find its y-value at the clicked doy (linear interp)
+      // and rank by distance to the click y.
+      let bestYear: number | null = null;
+      let bestDist = Infinity;
+      for (const s of seriesList) {
+        const data = s.data;
+        if (!data || data.length === 0) continue;
+        let yAtDoy: number | null = null;
+        for (let i = 0; i + 1 < data.length; i++) {
+          const [x0] = data[i];
+          const [x1] = data[i + 1];
+          if (x0 <= doy && doy <= x1) {
+            const t = x1 === x0 ? 0 : (doy - x0) / (x1 - x0);
+            yAtDoy = data[i][1] + (data[i + 1][1] - data[i][1]) * t;
+            break;
+          }
+        }
+        if (yAtDoy === null) continue;
+        const d = Math.abs(yAtDoy - val);
+        if (d < bestDist) {
+          bestDist = d;
+          bestYear = Number(s.name);
+        }
+      }
+
+      // Convert the click-to-line distance from data units to pixels, so
+      // "within N px" is consistent regardless of zoom or zoomed y-range.
+      // Lines are 0.7–2 px thin but stack densely; a generous tolerance
+      // beats requiring a sniper-shot click.
+      if (bestYear !== null) {
+        const yPx = c.convertToPixel({ gridIndex: 0 }, [doy, val + bestDist])[1];
+        const clickedPx = c.convertToPixel({ gridIndex: 0 }, [doy, val])[1];
+        if (Math.abs(yPx - clickedPx) > 30) bestYear = null;
+      }
+
+      if (bestYear === null) return;
+      setSelectedYear((curr) => (curr === bestYear ? null : bestYear));
+    });
   });
 
   onCleanup(() => {
@@ -326,9 +389,10 @@ export const Trends = () => {
     // we then read via getComputedStyle reflect whichever data-theme the
     // applyTheme() effect has already written to <html>.
     appState.effectiveTheme;
+    const sel = selectedYear();
     if (!chart || !data) return;
     const colors = readThemeColors();
-    chart.setOption(buildOption(data, src, ds, colors), true);
+    chart.setOption(buildOption(data, src, ds, colors, sel), true);
   });
 
   // Chart and grid are both mounted at all times (display-toggled by the
@@ -420,9 +484,10 @@ export const Trends = () => {
             <span>Click any region to expand. Use the Source and Dataset toggles in the header to switch between OISST/ERA5 and their available datasets.</span>
           }
         >
-          <span>Drag the slider below the chart to zoom in time of year. Scroll inside the chart
-          to zoom; shift-scroll to pan. Use the Source and Dataset toggles in the header to switch
-          between OISST/ERA5 and their available datasets.</span>
+          <span>Click any line to highlight that year (click again to clear). Drag the slider
+          below the chart to zoom in time of year. Scroll inside the chart to zoom; shift-scroll
+          to pan. Use the Source and Dataset toggles in the header to switch between OISST/ERA5
+          and their available datasets.</span>
         </Show>
       </div>
     </div>
