@@ -48,7 +48,13 @@ function equirectStem(source: SourceId, dataset: DatasetId, date: string | undef
     const suffix = dataset === 'sst' ? 'sst-temp' : 'sst-temp-anomaly';
     return `${datePrefix}${suffix}-equirect`;
   }
-  return `${datePrefix}${source}-${dataset}-equirect`;
+  // Upstream DatasetSpec.equirect_basename uses hyphens everywhere
+  // (era5-sst, era5-sst-anom, era5-t2m, era5-t2m-anom); dataset IDs use
+  // underscores for the anomaly variants because they're also cache-key
+  // segments. Map underscore → hyphen so the filename matches what
+  // pipeline.py wrote to S3.
+  const dsToken = dataset.replace(/_/g, '-');
+  return `${datePrefix}${source}-${dsToken}-equirect`;
 }
 
 /**

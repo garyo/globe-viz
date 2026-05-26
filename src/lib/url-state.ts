@@ -49,6 +49,12 @@ export function readUrlState(): Partial<AppState> & { pendingUrlDate?: string } 
   const mode = p.get('mode');
   if (mode && (VALID_MODE as readonly string[]).includes(mode)) {
     out.trendsMode = mode as 'single' | 'grid';
+  } else if (p.get('region')) {
+    // A URL that names a region implies single-region mode — the region
+    // picker has no effect in grid. Without this default, a recipient whose
+    // localStorage was last set to grid would land on grid and the region
+    // param would silently do nothing.
+    out.trendsMode = 'single';
   }
 
   const date = p.get('date');
@@ -92,8 +98,11 @@ export function writeUrlState(s: UrlStateInput): void {
   p.set('src', s.source);
   p.set('ds', s.dataset);
   if (s.activeTab === 'trends') {
+    // mode is always emitted on trends tab so a shared URL deterministically
+    // selects single vs grid — if we dropped mode=single the recipient's
+    // localStorage could pin them to grid and the region param would no-op.
+    p.set('mode', s.trendsMode);
     if (s.region && s.region !== 'global') p.set('region', s.region);
-    if (s.trendsMode && s.trendsMode !== 'single') p.set('mode', s.trendsMode);
   } else if (s.activeTab === 'globe') {
     if (s.currentDate) p.set('date', s.currentDate);
   }
