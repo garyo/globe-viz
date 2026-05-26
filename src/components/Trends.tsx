@@ -261,6 +261,14 @@ function buildOption(
       axisLabel: { color: c.text },
       splitLine: { lineStyle: { color: c.grid } },
       scale: true,
+      // Tie the axis range exactly to the data, no auto-padding. Without
+      // this, scale:true pads ~5% above and below, which means the rendered
+      // y range is wider than what dataZoom (which talks in data-extent
+      // values) can address — our wheel handler computes a new range based
+      // on the wider rendered extent, ECharts then clamps to the narrower
+      // data extent, and the first zoom either visibly snaps or no-ops.
+      min: 'dataMin',
+      max: 'dataMax',
     },
     dataZoom: [
       // Native wheel zoom disabled — we handle it ourselves so we can
@@ -326,51 +334,50 @@ export const Trends = () => {
     window.addEventListener('resize', resizeHandler);
 
     // Wheel zoom: take over from ECharts so we can (a) tame the sensitivity
-    // and (b) anchor the zoom on the cursor on BOTH axes simultaneously —
-    // when you're hunting for detail, zooming both feels like the natural
-    // "magnify here" gesture. Attached on the container in capture phase
-    // so we run before any internal ECharts/zrender wheel handler;
-    // ECharts' built-in zoom-on-wheel is disabled via zoomOnMouseWheel:
-    // false on both inside zooms.
+    // and (b) anchor the zoom on the cursor on BOTH axes simultaneously.
+    // Attached in capture phase so we run before any ECharts/zrender wheel
+    // handler; ECharts' built-in zoom-on-wheel is disabled via
+    // zoomOnMouseWheel: false on both inside zooms.
     //
-    // Math: dataZoom start/end are percentages (0..100) of the FULL data
-    // domain. To keep the mouse anchored on its data point, the offset of
-    // the mouse within the visible window stays constant across the zoom.
+    // We work entirely in axis-value space (not percentages) to avoid an
+    // auto-padding gotcha on the y-axis: the rendered axis range can be
+    // wider than the dataZoom-implied range (so axis.scale.getExtent() ≠
+    // the [startValue, endValue] of the dataZoom). Mixing the two made
+    // the first y-zoom jump (padding evaporated on the first dispatch)
+    // and shifted the cursor anchor. dispatchAction with startValue /
+    // endValue talks to ECharts in the same space as dz.startValue /
+    // dz.endValue, so nothing drifts.
     const ZOOM_PER_DELTA = 0.001; // exp(deltaY * k) ≈ 10% range change per wheel notch (deltaY=100)
-    const clampPercent = (p: number) => Math.max(0, Math.min(100, p));
 
-    // Compute the new [start, end]% for one axis. Returns null if we can't
-    // figure it out (no zoom config, no axis, etc.) — caller skips the
-    // dispatchAction for that axis.
-    //
-    // Coordinate spaces in play here:
-    //   - dataZoom.start / dataZoom.end are percentages (0-100) of the
-    //     FULL axis data range.
-    //   - axis.scale.getExtent() returns the CURRENT visible value range
-    //     (i.e. the value at the start% and end% positions). So a value
-    //     converted to a fraction of [extent[0], extent[1]] is a fraction
-    //     of the *visible window*, not the full domain — we must remap it
-    //     into the full-domain space before doing zoom math, or the anchor
-    //     drifts whenever you're already zoomed in.
     const zoomAxis = (
       axis: 'x' | 'y',
       mouseDataVal: number,
       factor: number,
-    ): { start: number; end: number; index: number } | null => {
+    ): { startValue: number; endValue: number; index: number } | null => {
       if (!chart) return null;
       const axisKey = axis === 'y' ? 'yAxisIndex' : 'xAxisIndex';
       const opt = chart.getOption() as {
-        dataZoom?: Array<{ type?: string; start?: number; end?: number; xAxisIndex?: number; yAxisIndex?: number }>;
+        dataZoom?: Array<{
+          type?: string;
+          xAxisIndex?: number;
+          yAxisIndex?: number;
+        }>;
       };
       const zooms = opt.dataZoom ?? [];
-      const dzIdx = zooms.findIndex((z) => z.type === 'inside' && z[axisKey as 'xAxisIndex' | 'yAxisIndex'] === 0);
+      const dzIdx = zooms.findIndex(
+        (z) => z.type === 'inside' && z[axisKey as 'xAxisIndex' | 'yAxisIndex'] === 0,
+      );
       if (dzIdx < 0) return null;
-      const dz = zooms[dzIdx];
-      const start = dz.start ?? 0;
-      const end = dz.end ?? 100;
-      const range = end - start;
-      if (range <= 0) return null;
 
+      // Use the axis's rendered extent (what the user actually sees) rather
+      // than dataZoom.startValue/endValue. With `scale: true` on the y-axis,
+      // ECharts pads the rendered range slightly beyond the dataZoom range
+      // (e.g. visible [19.5, 21.3] when dataZoom maps 0-100% → [19.65, 21.17]).
+      // On the very first dispatchAction that padding evaporates, and a 10%
+      // zoom math step would look like a 25% visual jump. Anchoring on the
+      // rendered extent makes every wheel notch shrink the visible window
+      // by the same fraction, and dispatching with startValue/endValue then
+      // sets the next rendered extent exactly.
       const axisModel = (chart as unknown as {
         getModel: () => {
           getComponent: (n: string, i: number) => {
@@ -380,37 +387,28 @@ export const Trends = () => {
       }).getModel().getComponent(axis === 'y' ? 'yAxis' : 'xAxis', 0);
       const extent = axisModel?.axis.scale.getExtent();
       if (!extent || extent[1] === extent[0]) return null;
+      const sv = extent[0];
+      const ev = extent[1];
+      const range = ev - sv;
 
-      // Mouse's fraction within the currently-visible window, then mapped
-      // into the full-domain percentage so we can subtract `start` cleanly.
-      // Clamp to [0,1]: a cursor near or just past the visible edges should
-      // anchor on that edge, not extrapolate past the data domain.
-      const rawFraction = (mouseDataVal - extent[0]) / (extent[1] - extent[0]);
-      const fractionInView = Math.max(0, Math.min(1, rawFraction));
-      const mousePctFull = start + fractionInView * range;
+      // Mouse fraction within the visible window. Clamp so cursors slightly
+      // outside the grid anchor on the nearest edge rather than extrapolating.
+      const fractionInView = Math.max(0, Math.min(1, (mouseDataVal - sv) / range));
 
-      const newRange = Math.max(0.5, Math.min(100, range * factor));
-      // Keep the mouse anchored: its fraction within the new window equals
-      // its fraction within the old window.
-      let newStart = clampPercent(mousePctFull - fractionInView * newRange);
-      let newEnd = clampPercent(newStart + newRange);
-      // If we clamped at an edge, slide the other side so width is preserved.
-      if (newEnd === 100) newStart = clampPercent(newEnd - newRange);
-      if (newStart === 0) newEnd = clampPercent(newStart + newRange);
-      return { start: newStart, end: newEnd, index: dzIdx };
+      const newRange = Math.max(range * 0.005, range * factor); // floor at 0.5% of current
+      const newSv = mouseDataVal - fractionInView * newRange;
+      const newEv = newSv + newRange;
+      return { startValue: newSv, endValue: newEv, index: dzIdx };
     };
 
     wheelHandler = (e: WheelEvent) => {
       if (!chart) return;
       e.preventDefault();
 
-      // Mouse pixel → both axis data values via the grid converter.
-      // We don't gate on containPixel: when the cursor is near the chart
-      // top (e.g. over the title or the record-temperature pin), it's
-      // sometimes just above the grid and containPixel returns false.
-      // Falling out there would make scroll do nothing for the user; instead
-      // we let convertFromPixel extrapolate and clamp the in-view fraction
-      // per axis below.
+      // Mouse pixel → both axis data values. We don't gate on containPixel:
+      // when the cursor is just above the grid (over the title or
+      // record-temp pin) the handler should still fire; clamping inside
+      // zoomAxis keeps the anchor sensible.
       const rect = chartRef!.getBoundingClientRect();
       const px = [e.clientX - rect.left, e.clientY - rect.top];
       const [mouseX, mouseY] = chart.convertFromPixel({ gridIndex: 0 }, px) as [number, number];
@@ -418,15 +416,29 @@ export const Trends = () => {
       // deltaY > 0 = scroll down = zoom out (factor > 1 = wider window).
       const factor = Math.exp(e.deltaY * ZOOM_PER_DELTA);
 
+      // Dispatch x and y separately rather than batched: ECharts' batch
+      // form silently drops the y-axis entry when an x-axis entry is also
+      // present (verified experimentally — only the first entry applied).
+      // Two dispatchActions in the same tick coalesce into a single redraw
+      // anyway.
       const xz = zoomAxis('x', mouseX, factor);
       const yz = zoomAxis('y', mouseY, factor);
-      // Batch both axes into a single dispatchAction so the chart redraws
-      // once with the new window on both x and y.
-      const batchPayload: Array<{ dataZoomIndex: number; start: number; end: number }> = [];
-      if (xz) batchPayload.push({ dataZoomIndex: xz.index, start: xz.start, end: xz.end });
-      if (yz) batchPayload.push({ dataZoomIndex: yz.index, start: yz.start, end: yz.end });
-      if (batchPayload.length === 0) return;
-      chart.dispatchAction({ type: 'dataZoom', batch: batchPayload });
+      if (xz) {
+        chart.dispatchAction({
+          type: 'dataZoom',
+          dataZoomIndex: xz.index,
+          startValue: xz.startValue,
+          endValue: xz.endValue,
+        });
+      }
+      if (yz) {
+        chart.dispatchAction({
+          type: 'dataZoom',
+          dataZoomIndex: yz.index,
+          startValue: yz.startValue,
+          endValue: yz.endValue,
+        });
+      }
     };
     chartRef.addEventListener('wheel', wheelHandler, { capture: true, passive: false });
 
