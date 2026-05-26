@@ -268,6 +268,11 @@ function buildOption(
       axisLabel: { color: c.text, formatter: (v: number) => v.toFixed(1) },
       splitLine: { lineStyle: { color: c.grid } },
       scale: true,
+      // Hint for tick count: with the default (5) and bounds pinned to the
+      // raw data extent, ECharts ends up subdividing into ugly 0.3-style
+      // steps. 10 nudges the algorithm toward the 1/2/5 family at the next
+      // finer magnitude (e.g. 0.2 for a ~1.5°C range).
+      splitNumber: 10,
       // Tie the axis range exactly to the data, no auto-padding. Without
       // this, scale:true pads ~5% above and below, which means the rendered
       // y range is wider than what dataZoom (which talks in data-extent
