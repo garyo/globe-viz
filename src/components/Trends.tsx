@@ -258,7 +258,14 @@ function buildOption(
       name: datasetLabel,
       nameTextStyle: { color: c.text },
       axisLine: { lineStyle: { color: c.axis } },
-      axisLabel: { color: c.text },
+      // Round axis labels to 1 decimal. Default formatter prints the raw
+      // tick value, which for the topmost/bottommost ticks (sitting at
+      // dataMin/dataMax — see min/max below) means full float precision
+      // ("21.167951345435234"). When the user zooms in even slightly,
+      // ECharts re-picks ticks at nicer round values, the label column
+      // shrinks, the grid x position shifts, and the chart "pops".
+      // Fixed precision keeps the label-column width stable across zooms.
+      axisLabel: { color: c.text, formatter: (v: number) => v.toFixed(1) },
       splitLine: { lineStyle: { color: c.grid } },
       scale: true,
       // Tie the axis range exactly to the data, no auto-padding. Without
