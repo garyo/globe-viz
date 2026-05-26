@@ -304,7 +304,7 @@ export const Trends = () => {
   let chartRef: HTMLDivElement | undefined;
   let chart: echarts.ECharts | undefined;
   let resizeHandler: (() => void) | undefined;
-  let wheelInterceptor: ((e: WheelEvent) => void) | undefined;
+  let wheelHandler: ((e: WheelEvent) => void) | undefined;
 
   // Track the current region from appState so the resource refetches whenever
   // the user changes the selection.
@@ -326,25 +326,21 @@ export const Trends = () => {
     window.addEventListener('resize', resizeHandler);
 
     // Wheel zoom: take over from ECharts so we can (a) tame the sensitivity
-    // and (b) anchor the zoom on the cursor. ECharts' built-in inside zoom
-    // is too aggressive at default settings and (in our config) didn't
-    // visibly center around the mouse. Plain scroll = X-zoom; shift+scroll
-    // = Y-zoom. Drag-to-pan still works via the inside zoom's
-    // moveOnMouseMove.
+    // and (b) anchor the zoom on the cursor. Attached on the container in
+    // capture phase so we run before any internal ECharts/zrender wheel
+    // handler. ECharts' built-in zoom-on-wheel is disabled via
+    // zoomOnMouseWheel: false on both inside zooms so we're the sole driver.
     //
     // Math: dataZoom start/end are percentages (0..100) of the FULL data
-    // domain. Let m be the mouse position as a percentage; to keep the
-    // mouse anchored on its current data point, the offset of the mouse
-    // within the visible window must stay constant across the zoom.
-    const ZOOM_PER_DELTA = 0.001; // exp(deltaY * k) ≈ 10% change at one mouse-wheel notch (deltaY=100)
+    // domain. To keep the mouse anchored on its data point, the offset of
+    // the mouse within the visible window stays constant across the zoom.
+    const ZOOM_PER_DELTA = 0.001; // exp(deltaY * k) ≈ 10% range change per wheel notch (deltaY=100)
     const clampPercent = (p: number) => Math.max(0, Math.min(100, p));
 
-    wheelInterceptor = (e: WheelEvent) => {
+    wheelHandler = (e: WheelEvent) => {
       if (!chart) return;
       e.preventDefault();
-      e.stopPropagation();
 
-      // Which axis to zoom: shift = y, otherwise = x.
       const useY = e.shiftKey;
       const axisKey = useY ? 'yAxisIndex' : 'xAxisIndex';
 
@@ -359,14 +355,12 @@ export const Trends = () => {
       const range = end - start;
       if (range <= 0) return;
 
-      // Mouse position in pixels relative to the canvas, then in data %.
-      const rect = (e.target as HTMLElement)?.getBoundingClientRect?.()
-        ?? chartRef!.getBoundingClientRect();
+      // Convert mouse pixel to data value. WheelEvent.offsetX is relative
+      // to the event target; we want it relative to the chart container.
+      const rect = chartRef!.getBoundingClientRect();
       const px = [e.clientX - rect.left, e.clientY - rect.top];
       if (!chart.containPixel({ gridIndex: 0 }, px)) return;
       const dataCoord = chart.convertFromPixel({ gridIndex: 0 }, px) as [number, number];
-      // To convert the data value back to a percentage of the FULL axis
-      // domain we need the axis extent. ECharts exposes it via getModel.
       const axisModel = (chart as unknown as {
         getModel: () => {
           getComponent: (n: string, i: number) => {
@@ -379,25 +373,23 @@ export const Trends = () => {
       const dataVal = useY ? dataCoord[1] : dataCoord[0];
       const mousePct = ((dataVal - extent[0]) / (extent[1] - extent[0])) * 100;
 
-      // Multiplicative zoom: factor < 1 = zoom in (narrower window), > 1 = out.
+      // deltaY > 0 = scroll down = zoom out. Multiplicative for smooth feel.
       const factor = Math.exp(e.deltaY * ZOOM_PER_DELTA);
       const newRange = Math.max(0.5, Math.min(100, range * factor));
-      // Keep the mouse anchored: position-within-window stays constant.
       const t = range > 0 ? (mousePct - start) / range : 0.5;
       let newStart = clampPercent(mousePct - t * newRange);
       let newEnd = clampPercent(newStart + newRange);
-      // If clamped, shift the other side back so width is preserved.
       if (newEnd === 100) newStart = clampPercent(newEnd - newRange);
       if (newStart === 0) newEnd = clampPercent(newStart + newRange);
 
       chart.dispatchAction({
         type: 'dataZoom',
-        dataZoomIndex: useY ? 2 : 0, // index in our dataZoom array: 0=x-inside, 1=slider, 2=y-inside
+        dataZoomIndex: useY ? 2 : 0, // 0=x-inside, 1=slider, 2=y-inside
         start: newStart,
         end: newEnd,
       });
     };
-    chartRef.addEventListener('wheel', wheelInterceptor, { passive: false });
+    chartRef.addEventListener('wheel', wheelHandler, { capture: true, passive: false });
 
     // Listen at the renderer level. The chart-level 'click' fires through
     // ECharts' hit-testing, which struggles to register clicks on thin
@@ -456,8 +448,8 @@ export const Trends = () => {
 
   onCleanup(() => {
     if (resizeHandler) window.removeEventListener('resize', resizeHandler);
-    if (wheelInterceptor && chartRef) {
-      chartRef.removeEventListener('wheel', wheelInterceptor);
+    if (wheelHandler && chartRef) {
+      chartRef.removeEventListener('wheel', wheelHandler, { capture: true });
     }
     chart?.dispose();
     chart = undefined;
