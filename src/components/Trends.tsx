@@ -342,6 +342,16 @@ export const Trends = () => {
     // Compute the new [start, end]% for one axis. Returns null if we can't
     // figure it out (no zoom config, no axis, etc.) — caller skips the
     // dispatchAction for that axis.
+    //
+    // Coordinate spaces in play here:
+    //   - dataZoom.start / dataZoom.end are percentages (0-100) of the
+    //     FULL axis data range.
+    //   - axis.scale.getExtent() returns the CURRENT visible value range
+    //     (i.e. the value at the start% and end% positions). So a value
+    //     converted to a fraction of [extent[0], extent[1]] is a fraction
+    //     of the *visible window*, not the full domain — we must remap it
+    //     into the full-domain space before doing zoom math, or the anchor
+    //     drifts whenever you're already zoomed in.
     const zoomAxis = (
       axis: 'x' | 'y',
       mouseDataVal: number,
@@ -369,13 +379,22 @@ export const Trends = () => {
         };
       }).getModel().getComponent(axis === 'y' ? 'yAxis' : 'xAxis', 0);
       const extent = axisModel?.axis.scale.getExtent();
-      if (!extent) return null;
-      const mousePct = ((mouseDataVal - extent[0]) / (extent[1] - extent[0])) * 100;
+      if (!extent || extent[1] === extent[0]) return null;
+
+      // Mouse's fraction within the currently-visible window, then mapped
+      // into the full-domain percentage so we can subtract `start` cleanly.
+      // Clamp to [0,1]: a cursor near or just past the visible edges should
+      // anchor on that edge, not extrapolate past the data domain.
+      const rawFraction = (mouseDataVal - extent[0]) / (extent[1] - extent[0]);
+      const fractionInView = Math.max(0, Math.min(1, rawFraction));
+      const mousePctFull = start + fractionInView * range;
 
       const newRange = Math.max(0.5, Math.min(100, range * factor));
-      const t = range > 0 ? (mousePct - start) / range : 0.5;
-      let newStart = clampPercent(mousePct - t * newRange);
+      // Keep the mouse anchored: its fraction within the new window equals
+      // its fraction within the old window.
+      let newStart = clampPercent(mousePctFull - fractionInView * newRange);
       let newEnd = clampPercent(newStart + newRange);
+      // If we clamped at an edge, slide the other side so width is preserved.
       if (newEnd === 100) newStart = clampPercent(newEnd - newRange);
       if (newStart === 0) newEnd = clampPercent(newStart + newRange);
       return { start: newStart, end: newEnd, index: dzIdx };
@@ -386,9 +405,14 @@ export const Trends = () => {
       e.preventDefault();
 
       // Mouse pixel → both axis data values via the grid converter.
+      // We don't gate on containPixel: when the cursor is near the chart
+      // top (e.g. over the title or the record-temperature pin), it's
+      // sometimes just above the grid and containPixel returns false.
+      // Falling out there would make scroll do nothing for the user; instead
+      // we let convertFromPixel extrapolate and clamp the in-view fraction
+      // per axis below.
       const rect = chartRef!.getBoundingClientRect();
       const px = [e.clientX - rect.left, e.clientY - rect.top];
-      if (!chart.containPixel({ gridIndex: 0 }, px)) return;
       const [mouseX, mouseY] = chart.convertFromPixel({ gridIndex: 0 }, px) as [number, number];
 
       // deltaY > 0 = scroll down = zoom out (factor > 1 = wider window).
