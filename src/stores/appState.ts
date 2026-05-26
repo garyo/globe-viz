@@ -1,5 +1,6 @@
 import { createStore } from 'solid-js/store';
 import { Color, type Texture } from 'three';
+import { readUrlState } from '../lib/url-state';
 
 export interface Metadata {
   cmap: [number, string][];
@@ -248,10 +249,27 @@ function loadSavedState(): Partial<AppState> {
 }
 
 const savedState = loadSavedState();
+// URL params take precedence over localStorage so a shared link always wins.
+// `pendingUrlDate` is split out — it needs availableDates to resolve to an
+// index, which happens later in AppLoader.
+const { pendingUrlDate, ...urlState } = readUrlState();
+
+/**
+ * Date selected via ?date= in the URL, awaiting resolution against
+ * availableDates. Consumed (and cleared) by AppLoader once the date list
+ * is loaded. Undefined when the URL didn't specify a date.
+ */
+export let pendingDateFromUrl: string | undefined = pendingUrlDate;
+export function consumePendingDateFromUrl(): string | undefined {
+  const d = pendingDateFromUrl;
+  pendingDateFromUrl = undefined;
+  return d;
+}
 
 export const [appState, setAppState] = createStore<AppState>({
   ...initialState,
   ...savedState,
+  ...urlState,
 });
 
 /**
@@ -283,6 +301,9 @@ export function saveState() {
     };
     localStorage.setItem('appState', JSON.stringify(toSave));
   }, 500);
+  // URL sync is handled by a reactive effect in AppLoader so it picks up
+  // every relevant change (including date scrubbing, which intentionally
+  // bypasses saveState).
 }
 
 // Helper to convert hex color to Three.js Color

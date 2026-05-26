@@ -1,7 +1,8 @@
-import { createSignal, onMount, onCleanup, Show, type Component } from 'solid-js';
+import { createEffect, createSignal, onMount, onCleanup, Show, type Component } from 'solid-js';
 import {
   setAppState,
   appState,
+  consumePendingDateFromUrl,
   DATASETS_BY_SOURCE,
   isValidDataset,
   defaultDatasetFor,
@@ -9,6 +10,7 @@ import {
 } from '../stores/appState';
 import { fetchDateIndex, fetchDatasetAssets } from '../lib/data/assets';
 import { TextureLoader } from 'three';
+import { writeUrlState } from '../lib/url-state';
 import { AppTabs } from './AppTabs';
 import { KeyboardControls } from './KeyboardControls';
 
@@ -67,11 +69,16 @@ export const AppLoader: Component = () => {
         setAppState('dataset', defaultDatasetFor(appState.source));
       }
 
-      // Pick an initial date: the chosen source's latest date if known,
-      // otherwise the union latest. This matters when the chosen source
-      // lags behind OISST (ERA5's ~5-day reanalysis latency).
+      // Pick an initial date: a date supplied via ?date= in the URL wins
+      // (so a shared link locks in the view); otherwise the chosen source's
+      // latest date; otherwise the union latest. This matters when the chosen
+      // source lags behind OISST (ERA5's ~5-day reanalysis latency).
+      const urlDate = consumePendingDateFromUrl();
       const sourceMeta = dateIndex.sources?.[appState.source];
-      const initialDate: string = sourceMeta?.latest ?? dateIndex.latest;
+      const initialDate: string =
+        (urlDate && dateIndex.dates.includes(urlDate) ? urlDate : undefined)
+        ?? sourceMeta?.latest
+        ?? dateIndex.latest;
       const initialIndex = dateIndex.dates.indexOf(initialDate);
       setAppState(
         'currentDateIndex',
@@ -149,6 +156,23 @@ export const AppLoader: Component = () => {
           // Don't show error to user, just log it
         }
       };
+
+      // Keep the URL bar in sync with the shareable data slice. saveState
+      // covers UI-driven changes (source/dataset/region/mode/tab), but date
+      // changes intentionally skip saveState so the user can scrub without
+      // localStorage churn — this reactive effect picks those up too. We use
+      // history.replaceState inside, so date scrubbing doesn't pollute the
+      // back button.
+      createEffect(() => {
+        writeUrlState({
+          activeTab: appState.activeTab,
+          source: appState.source,
+          dataset: appState.dataset,
+          region: appState.region,
+          trendsMode: appState.trendsMode,
+          currentDate: appState.availableDates[appState.currentDateIndex],
+        });
+      });
 
       // Set up periodic index refresh (every hour)
       refreshInterval = window.setInterval(refreshIndex, 3600000); // 1 hour in milliseconds
