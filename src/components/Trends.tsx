@@ -263,7 +263,10 @@ function buildOption(
       scale: true,
     },
     dataZoom: [
-      { type: 'inside', xAxisIndex: 0 },
+      // Native wheel zoom disabled — we handle it ourselves so we can
+      // tame sensitivity and anchor the zoom on the cursor. moveOnMouseMove
+      // (drag-to-pan) stays enabled.
+      { type: 'inside', xAxisIndex: 0, zoomOnMouseWheel: false, moveOnMouseWheel: false },
       {
         type: 'slider',
         xAxisIndex: 0,
@@ -274,7 +277,7 @@ function buildOption(
         fillerColor: c.grid,
         backgroundColor: 'transparent',
       },
-      { type: 'inside', yAxisIndex: 0 },
+      { type: 'inside', yAxisIndex: 0, zoomOnMouseWheel: false, moveOnMouseWheel: false },
     ],
     legend: {
       show: true,
@@ -322,39 +325,79 @@ export const Trends = () => {
     resizeHandler = () => chart?.resize();
     window.addEventListener('resize', resizeHandler);
 
-    // Slow down wheel-zoom sensitivity. ECharts' `inside` dataZoom has no
-    // sensitivity knob — it zooms in proportion to deltaY. We intercept on
-    // the container in capture phase, stop the original event, and
-    // re-dispatch a synthetic WheelEvent with scaled-down deltas to the same
-    // target. The `__scaled` marker prevents an infinite loop on the
-    // synthetic re-dispatch.
-    const WHEEL_SCALE = 0.25;
+    // Wheel zoom: take over from ECharts so we can (a) tame the sensitivity
+    // and (b) anchor the zoom on the cursor. ECharts' built-in inside zoom
+    // is too aggressive at default settings and (in our config) didn't
+    // visibly center around the mouse. Plain scroll = X-zoom; shift+scroll
+    // = Y-zoom. Drag-to-pan still works via the inside zoom's
+    // moveOnMouseMove.
+    //
+    // Math: dataZoom start/end are percentages (0..100) of the FULL data
+    // domain. Let m be the mouse position as a percentage; to keep the
+    // mouse anchored on its current data point, the offset of the mouse
+    // within the visible window must stay constant across the zoom.
+    const ZOOM_PER_DELTA = 0.001; // exp(deltaY * k) ≈ 10% change at one mouse-wheel notch (deltaY=100)
+    const clampPercent = (p: number) => Math.max(0, Math.min(100, p));
+
     wheelInterceptor = (e: WheelEvent) => {
-      if ((e as WheelEvent & { __scaled?: boolean }).__scaled) return;
+      if (!chart) return;
       e.preventDefault();
       e.stopPropagation();
-      const synth = new WheelEvent('wheel', {
-        deltaX: e.deltaX * WHEEL_SCALE,
-        deltaY: e.deltaY * WHEEL_SCALE,
-        deltaZ: e.deltaZ * WHEEL_SCALE,
-        deltaMode: e.deltaMode,
-        bubbles: true,
-        cancelable: true,
-        clientX: e.clientX,
-        clientY: e.clientY,
-        screenX: e.screenX,
-        screenY: e.screenY,
-        ctrlKey: e.ctrlKey,
-        shiftKey: e.shiftKey,
-        altKey: e.altKey,
-        metaKey: e.metaKey,
-        button: e.button,
-        buttons: e.buttons,
+
+      // Which axis to zoom: shift = y, otherwise = x.
+      const useY = e.shiftKey;
+      const axisKey = useY ? 'yAxisIndex' : 'xAxisIndex';
+
+      const opt = chart.getOption() as {
+        dataZoom?: Array<{ type?: string; start?: number; end?: number; xAxisIndex?: number; yAxisIndex?: number }>;
+      };
+      const zooms = opt.dataZoom ?? [];
+      const dz = zooms.find((z) => z.type === 'inside' && z[axisKey as 'xAxisIndex' | 'yAxisIndex'] === 0);
+      if (!dz) return;
+      const start = dz.start ?? 0;
+      const end = dz.end ?? 100;
+      const range = end - start;
+      if (range <= 0) return;
+
+      // Mouse position in pixels relative to the canvas, then in data %.
+      const rect = (e.target as HTMLElement)?.getBoundingClientRect?.()
+        ?? chartRef!.getBoundingClientRect();
+      const px = [e.clientX - rect.left, e.clientY - rect.top];
+      if (!chart.containPixel({ gridIndex: 0 }, px)) return;
+      const dataCoord = chart.convertFromPixel({ gridIndex: 0 }, px) as [number, number];
+      // To convert the data value back to a percentage of the FULL axis
+      // domain we need the axis extent. ECharts exposes it via getModel.
+      const axisModel = (chart as unknown as {
+        getModel: () => {
+          getComponent: (n: string, i: number) => {
+            axis: { scale: { getExtent: () => [number, number] } };
+          } | undefined;
+        };
+      }).getModel().getComponent(useY ? 'yAxis' : 'xAxis', 0);
+      const extent = axisModel?.axis.scale.getExtent();
+      if (!extent) return;
+      const dataVal = useY ? dataCoord[1] : dataCoord[0];
+      const mousePct = ((dataVal - extent[0]) / (extent[1] - extent[0])) * 100;
+
+      // Multiplicative zoom: factor < 1 = zoom in (narrower window), > 1 = out.
+      const factor = Math.exp(e.deltaY * ZOOM_PER_DELTA);
+      const newRange = Math.max(0.5, Math.min(100, range * factor));
+      // Keep the mouse anchored: position-within-window stays constant.
+      const t = range > 0 ? (mousePct - start) / range : 0.5;
+      let newStart = clampPercent(mousePct - t * newRange);
+      let newEnd = clampPercent(newStart + newRange);
+      // If clamped, shift the other side back so width is preserved.
+      if (newEnd === 100) newStart = clampPercent(newEnd - newRange);
+      if (newStart === 0) newEnd = clampPercent(newStart + newRange);
+
+      chart.dispatchAction({
+        type: 'dataZoom',
+        dataZoomIndex: useY ? 2 : 0, // index in our dataZoom array: 0=x-inside, 1=slider, 2=y-inside
+        start: newStart,
+        end: newEnd,
       });
-      (synth as WheelEvent & { __scaled?: boolean }).__scaled = true;
-      e.target?.dispatchEvent(synth);
     };
-    chartRef.addEventListener('wheel', wheelInterceptor, { capture: true, passive: false });
+    chartRef.addEventListener('wheel', wheelInterceptor, { passive: false });
 
     // Listen at the renderer level. The chart-level 'click' fires through
     // ECharts' hit-testing, which struggles to register clicks on thin
@@ -414,7 +457,7 @@ export const Trends = () => {
   onCleanup(() => {
     if (resizeHandler) window.removeEventListener('resize', resizeHandler);
     if (wheelInterceptor && chartRef) {
-      chartRef.removeEventListener('wheel', wheelInterceptor, { capture: true });
+      chartRef.removeEventListener('wheel', wheelInterceptor);
     }
     chart?.dispose();
     chart = undefined;
