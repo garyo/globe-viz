@@ -1,5 +1,5 @@
 import { For, Show, createMemo, createResource } from 'solid-js';
-import { appState, setAppState, saveState, type DatasetId } from '../stores/appState';
+import { appState, setAppState, saveState, anomalyOf, type DatasetId } from '../stores/appState';
 import { fetchTimeseries, type TimeseriesPayload } from '../lib/data/timeseries';
 import { readThemeColors } from '../lib/timeseriesUtils';
 import { MiniChart } from './MiniChart';
@@ -29,7 +29,7 @@ const orderRank = (id: string) => {
 };
 
 const formatValue = (v: number, ds: DatasetId): string =>
-  ds === 'anom' ? `Δ ${v.toFixed(2)} °C` : `${v.toFixed(2)} °C`;
+  anomalyOf(ds) ? `Δ ${v.toFixed(2)} °C` : `${v.toFixed(2)} °C`;
 
 export const TrendsGrid = () => {
   // Fetch every available region's payload in parallel. fetchTimeseries

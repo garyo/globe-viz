@@ -14,7 +14,9 @@ export interface ColormapConfig {
 const DATASET_TITLES: Record<DatasetId, string> = {
   sst: 'Temperature, °C',
   anom: 'Temperature Anomaly, °C',
+  sst_anom: 'SST Anomaly, °C',
   t2m: '2 m Air Temperature, °C',
+  t2m_anom: '2 m Air Temp Anomaly, °C',
 };
 
 // Cells (tick positions) per dataset. SST gets denser ticks around the upper
@@ -27,7 +29,9 @@ const DATASET_CELLS: Partial<Record<DatasetId, number[]>> = {
 const DATASET_FORMATS: Record<DatasetId, string> = {
   sst: '.0f',
   anom: '.1f',
+  sst_anom: '.1f',
   t2m: '.0f',
+  t2m_anom: '.1f',
 };
 
 /**

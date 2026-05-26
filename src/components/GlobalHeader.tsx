@@ -3,12 +3,16 @@ import {
   appState,
   setAppState,
   saveState,
-  DATASETS_BY_SOURCE,
   isValidDataset,
   defaultDatasetFor,
+  variableOf,
+  anomalyOf,
+  datasetFor,
+  variablesFor,
+  hasAnomalyFor,
   type TabId,
   type SourceId,
-  type DatasetId,
+  type Variable,
 } from '../stores/appState';
 import { ThemeSwitcher } from './controls/ThemeSwitcher';
 
@@ -23,21 +27,12 @@ const SOURCE_LABELS: Record<SourceId, { short: string; full: string }> = {
   era5: { short: 'ERA5', full: 'ECMWF ERA5' },
 };
 
-const DATASET_LABELS: Record<DatasetId, { icon: string; short: string; long: string }> = {
-  sst: { icon: '🌡', short: 'Temp', long: 'Sea-surface temperature' },
-  anom: { icon: 'Δ', short: 'Anomaly', long: 'SST anomaly vs. 1971–2000 mean' },
-  t2m: { icon: '🌬', short: '2 m Air', long: '2 m air temperature' },
+// Variable buttons (orthogonal to the anomaly toggle below). OISST has only
+// SST; ERA5 adds 2 m air temperature.
+const VARIABLE_LABELS: Record<Variable, { icon: string; short: string; long: string }> = {
+  sst: { icon: '🌡', short: 'Sea Temp', long: 'Sea-surface temperature' },
+  t2m: { icon: '🌬', short: 'Air Temp', long: '2 m air temperature' },
 };
-
-// Per-source overrides for the short button label. ERA5 sits sst next to t2m,
-// where bare "Temp" is ambiguous — spell out that it's the sea-surface variant.
-const DATASET_SHORT_OVERRIDES: Partial<Record<SourceId, Partial<Record<DatasetId, string>>>> = {
-  era5: { sst: 'Sea Surf Temp' },
-};
-
-function datasetShort(source: SourceId, dataset: DatasetId): string {
-  return DATASET_SHORT_OVERRIDES[source]?.[dataset] ?? DATASET_LABELS[dataset].short;
-}
 
 export const GlobalHeader = () => {
   const switchTab = (id: TabId) => {
@@ -46,10 +41,27 @@ export const GlobalHeader = () => {
     saveState();
   };
 
-  const selectDataset = (id: DatasetId) => {
-    if (appState.dataset === id) return;
-    setAppState('dataset', id);
+  // Variable + anomaly are the user-facing knobs; we compose them back into
+  // the raw DatasetId so the rest of the app keeps working unchanged.
+  const currentVariable = (): Variable => variableOf(appState.dataset);
+  const currentAnomaly = (): boolean => anomalyOf(appState.dataset);
+
+  const applyDatasetChoice = (variable: Variable, anomaly: boolean) => {
+    const next = datasetFor(appState.source, variable, anomaly);
+    if (!next || next === appState.dataset) return;
+    setAppState('dataset', next);
     saveState();
+  };
+
+  const selectVariable = (v: Variable) => {
+    // Keep anomaly preference if the new variable supports it; otherwise drop
+    // back to raw (the user can re-check if/when t2m_anom ships).
+    const wantAnom = currentAnomaly() && hasAnomalyFor(appState.source, v);
+    applyDatasetChoice(v, wantAnom);
+  };
+
+  const toggleAnomaly = () => {
+    applyDatasetChoice(currentVariable(), !currentAnomaly());
   };
 
   const selectSource = (id: SourceId) => {
@@ -84,8 +96,9 @@ export const GlobalHeader = () => {
     saveState();
   };
 
-  // Datasets to show in the toggle depend on the active source.
-  const datasetsForSource = () => DATASETS_BY_SOURCE[appState.source];
+  // Variables visible to the user depend on the active source.
+  const variablesForSource = () => variablesFor(appState.source);
+  const anomalyAvailable = () => hasAnomalyFor(appState.source, currentVariable());
 
   return (
     <header class="global-header">
@@ -129,24 +142,44 @@ export const GlobalHeader = () => {
           </div>
         </Show>
 
-        <div class="segmented" role="radiogroup" aria-label="Dataset">
-          <For each={datasetsForSource()}>
-            {(d) => (
-              <button
-                type="button"
-                role="radio"
-                aria-checked={appState.dataset === d}
-                aria-label={DATASET_LABELS[d].long}
-                classList={{ active: appState.dataset === d }}
-                onClick={() => selectDataset(d)}
-                title={DATASET_LABELS[d].long}
-              >
-                <span class="icon">{DATASET_LABELS[d].icon}</span>
-                <span class="label-mobile-hide">{datasetShort(appState.source, d)}</span>
-              </button>
-            )}
-          </For>
-        </div>
+        <Show when={variablesForSource().length > 1}>
+          <div class="segmented" role="radiogroup" aria-label="Variable">
+            <For each={variablesForSource()}>
+              {(v) => (
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={currentVariable() === v}
+                  aria-label={VARIABLE_LABELS[v].long}
+                  classList={{ active: currentVariable() === v }}
+                  onClick={() => selectVariable(v)}
+                  title={VARIABLE_LABELS[v].long}
+                >
+                  <span class="icon">{VARIABLE_LABELS[v].icon}</span>
+                  <span class="label-mobile-hide">{VARIABLE_LABELS[v].short}</span>
+                </button>
+              )}
+            </For>
+          </div>
+        </Show>
+
+        <label
+          class="anomaly-toggle"
+          title={
+            anomalyAvailable()
+              ? 'Show anomaly vs. 1971–2000 climatology'
+              : 'Anomaly not yet available for this variable'
+          }
+        >
+          <input
+            type="checkbox"
+            checked={currentAnomaly()}
+            disabled={!anomalyAvailable()}
+            onChange={toggleAnomaly}
+            aria-label="Show anomaly"
+          />
+          <span class="label-mobile-hide">Δ Anomaly</span>
+        </label>
 
         <ThemeSwitcher />
       </div>

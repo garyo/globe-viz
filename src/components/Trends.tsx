@@ -59,13 +59,17 @@ const SOURCE_LABELS: Record<SourceId, string> = {
 const DATASET_AXIS_LABELS: Record<DatasetId, string> = {
   sst: 'SST (°C)',
   anom: 'Anomaly vs. 1971–2000 mean (°C)',
+  sst_anom: 'SST Anomaly vs. 1971–2000 mean (°C)',
   t2m: '2 m Air Temp (°C)',
+  t2m_anom: '2 m Air Temp Anomaly vs. 1971–2000 mean (°C)',
 };
 
 const DATASET_TITLE_FRAGMENT: Record<DatasetId, string> = {
   sst: 'Sea Surface Temperature',
   anom: 'SST Anomaly vs. 1971–2000 mean',
+  sst_anom: 'SST Anomaly vs. 1971–2000 mean',
   t2m: '2 m Air Temperature',
+  t2m_anom: '2 m Air Temp Anomaly vs. 1971–2000 mean',
 };
 
 function findRecord(yearsSeries: YearSeries[]): { year: number; doy: number; value: number } | null {
@@ -297,6 +301,7 @@ export const Trends = () => {
   let chartRef: HTMLDivElement | undefined;
   let chart: echarts.ECharts | undefined;
   let resizeHandler: (() => void) | undefined;
+  let wheelInterceptor: ((e: WheelEvent) => void) | undefined;
 
   // Track the current region from appState so the resource refetches whenever
   // the user changes the selection.
@@ -316,6 +321,40 @@ export const Trends = () => {
     chart = echarts.init(chartRef, undefined, { renderer: 'canvas' });
     resizeHandler = () => chart?.resize();
     window.addEventListener('resize', resizeHandler);
+
+    // Slow down wheel-zoom sensitivity. ECharts' `inside` dataZoom has no
+    // sensitivity knob — it zooms in proportion to deltaY. We intercept on
+    // the container in capture phase, stop the original event, and
+    // re-dispatch a synthetic WheelEvent with scaled-down deltas to the same
+    // target. The `__scaled` marker prevents an infinite loop on the
+    // synthetic re-dispatch.
+    const WHEEL_SCALE = 0.25;
+    wheelInterceptor = (e: WheelEvent) => {
+      if ((e as WheelEvent & { __scaled?: boolean }).__scaled) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const synth = new WheelEvent('wheel', {
+        deltaX: e.deltaX * WHEEL_SCALE,
+        deltaY: e.deltaY * WHEEL_SCALE,
+        deltaZ: e.deltaZ * WHEEL_SCALE,
+        deltaMode: e.deltaMode,
+        bubbles: true,
+        cancelable: true,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        screenX: e.screenX,
+        screenY: e.screenY,
+        ctrlKey: e.ctrlKey,
+        shiftKey: e.shiftKey,
+        altKey: e.altKey,
+        metaKey: e.metaKey,
+        button: e.button,
+        buttons: e.buttons,
+      });
+      (synth as WheelEvent & { __scaled?: boolean }).__scaled = true;
+      e.target?.dispatchEvent(synth);
+    };
+    chartRef.addEventListener('wheel', wheelInterceptor, { capture: true, passive: false });
 
     // Listen at the renderer level. The chart-level 'click' fires through
     // ECharts' hit-testing, which struggles to register clicks on thin
@@ -374,6 +413,9 @@ export const Trends = () => {
 
   onCleanup(() => {
     if (resizeHandler) window.removeEventListener('resize', resizeHandler);
+    if (wheelInterceptor && chartRef) {
+      chartRef.removeEventListener('wheel', wheelInterceptor, { capture: true });
+    }
     chart?.dispose();
     chart = undefined;
   });
@@ -481,7 +523,7 @@ export const Trends = () => {
         <Show
           when={appState.trendsMode === 'single'}
           fallback={
-            <span>Click any region to expand. Use the Source and Dataset toggles in the header to switch between OISST/ERA5 and their available datasets.</span>
+            <span>Click any region to expand. Use the Source, Variable and Anomaly toggles in the header to switch between OISST/ERA5, SST/2 m air temp, and raw vs. anomaly.</span>
           }
         >
           <span>Click any line to highlight that year (click again to clear). Drag the slider
