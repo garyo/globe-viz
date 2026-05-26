@@ -326,10 +326,12 @@ export const Trends = () => {
     window.addEventListener('resize', resizeHandler);
 
     // Wheel zoom: take over from ECharts so we can (a) tame the sensitivity
-    // and (b) anchor the zoom on the cursor. Attached on the container in
-    // capture phase so we run before any internal ECharts/zrender wheel
-    // handler. ECharts' built-in zoom-on-wheel is disabled via
-    // zoomOnMouseWheel: false on both inside zooms so we're the sole driver.
+    // and (b) anchor the zoom on the cursor on BOTH axes simultaneously —
+    // when you're hunting for detail, zooming both feels like the natural
+    // "magnify here" gesture. Attached on the container in capture phase
+    // so we run before any internal ECharts/zrender wheel handler;
+    // ECharts' built-in zoom-on-wheel is disabled via zoomOnMouseWheel:
+    // false on both inside zooms.
     //
     // Math: dataZoom start/end are percentages (0..100) of the FULL data
     // domain. To keep the mouse anchored on its data point, the offset of
@@ -337,57 +339,70 @@ export const Trends = () => {
     const ZOOM_PER_DELTA = 0.001; // exp(deltaY * k) ≈ 10% range change per wheel notch (deltaY=100)
     const clampPercent = (p: number) => Math.max(0, Math.min(100, p));
 
-    wheelHandler = (e: WheelEvent) => {
-      if (!chart) return;
-      e.preventDefault();
-
-      const useY = e.shiftKey;
-      const axisKey = useY ? 'yAxisIndex' : 'xAxisIndex';
-
+    // Compute the new [start, end]% for one axis. Returns null if we can't
+    // figure it out (no zoom config, no axis, etc.) — caller skips the
+    // dispatchAction for that axis.
+    const zoomAxis = (
+      axis: 'x' | 'y',
+      mouseDataVal: number,
+      factor: number,
+    ): { start: number; end: number; index: number } | null => {
+      if (!chart) return null;
+      const axisKey = axis === 'y' ? 'yAxisIndex' : 'xAxisIndex';
       const opt = chart.getOption() as {
         dataZoom?: Array<{ type?: string; start?: number; end?: number; xAxisIndex?: number; yAxisIndex?: number }>;
       };
       const zooms = opt.dataZoom ?? [];
-      const dz = zooms.find((z) => z.type === 'inside' && z[axisKey as 'xAxisIndex' | 'yAxisIndex'] === 0);
-      if (!dz) return;
+      const dzIdx = zooms.findIndex((z) => z.type === 'inside' && z[axisKey as 'xAxisIndex' | 'yAxisIndex'] === 0);
+      if (dzIdx < 0) return null;
+      const dz = zooms[dzIdx];
       const start = dz.start ?? 0;
       const end = dz.end ?? 100;
       const range = end - start;
-      if (range <= 0) return;
+      if (range <= 0) return null;
 
-      // Convert mouse pixel to data value. WheelEvent.offsetX is relative
-      // to the event target; we want it relative to the chart container.
-      const rect = chartRef!.getBoundingClientRect();
-      const px = [e.clientX - rect.left, e.clientY - rect.top];
-      if (!chart.containPixel({ gridIndex: 0 }, px)) return;
-      const dataCoord = chart.convertFromPixel({ gridIndex: 0 }, px) as [number, number];
       const axisModel = (chart as unknown as {
         getModel: () => {
           getComponent: (n: string, i: number) => {
             axis: { scale: { getExtent: () => [number, number] } };
           } | undefined;
         };
-      }).getModel().getComponent(useY ? 'yAxis' : 'xAxis', 0);
+      }).getModel().getComponent(axis === 'y' ? 'yAxis' : 'xAxis', 0);
       const extent = axisModel?.axis.scale.getExtent();
-      if (!extent) return;
-      const dataVal = useY ? dataCoord[1] : dataCoord[0];
-      const mousePct = ((dataVal - extent[0]) / (extent[1] - extent[0])) * 100;
+      if (!extent) return null;
+      const mousePct = ((mouseDataVal - extent[0]) / (extent[1] - extent[0])) * 100;
 
-      // deltaY > 0 = scroll down = zoom out. Multiplicative for smooth feel.
-      const factor = Math.exp(e.deltaY * ZOOM_PER_DELTA);
       const newRange = Math.max(0.5, Math.min(100, range * factor));
       const t = range > 0 ? (mousePct - start) / range : 0.5;
       let newStart = clampPercent(mousePct - t * newRange);
       let newEnd = clampPercent(newStart + newRange);
       if (newEnd === 100) newStart = clampPercent(newEnd - newRange);
       if (newStart === 0) newEnd = clampPercent(newStart + newRange);
+      return { start: newStart, end: newEnd, index: dzIdx };
+    };
 
-      chart.dispatchAction({
-        type: 'dataZoom',
-        dataZoomIndex: useY ? 2 : 0, // 0=x-inside, 1=slider, 2=y-inside
-        start: newStart,
-        end: newEnd,
-      });
+    wheelHandler = (e: WheelEvent) => {
+      if (!chart) return;
+      e.preventDefault();
+
+      // Mouse pixel → both axis data values via the grid converter.
+      const rect = chartRef!.getBoundingClientRect();
+      const px = [e.clientX - rect.left, e.clientY - rect.top];
+      if (!chart.containPixel({ gridIndex: 0 }, px)) return;
+      const [mouseX, mouseY] = chart.convertFromPixel({ gridIndex: 0 }, px) as [number, number];
+
+      // deltaY > 0 = scroll down = zoom out (factor > 1 = wider window).
+      const factor = Math.exp(e.deltaY * ZOOM_PER_DELTA);
+
+      const xz = zoomAxis('x', mouseX, factor);
+      const yz = zoomAxis('y', mouseY, factor);
+      // Batch both axes into a single dispatchAction so the chart redraws
+      // once with the new window on both x and y.
+      const batchPayload: Array<{ dataZoomIndex: number; start: number; end: number }> = [];
+      if (xz) batchPayload.push({ dataZoomIndex: xz.index, start: xz.start, end: xz.end });
+      if (yz) batchPayload.push({ dataZoomIndex: yz.index, start: yz.start, end: yz.end });
+      if (batchPayload.length === 0) return;
+      chart.dispatchAction({ type: 'dataZoom', batch: batchPayload });
     };
     chartRef.addEventListener('wheel', wheelHandler, { capture: true, passive: false });
 
