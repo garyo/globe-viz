@@ -82,12 +82,44 @@ function findRecord(yearsSeries: YearSeries[]): { year: number; doy: number; val
   return best;
 }
 
+/**
+ * Pick how many decimals the y-axis labels need so that consecutive ticks
+ * don't round to the same string. Reads the chart's current y-axis view
+ * range — when zoomed in tightly, ECharts picks small tick intervals
+ * (e.g. 0.05) and one decimal is no longer enough to distinguish them.
+ * Returns at least 1 decimal so the label column width is stable when
+ * we're not zoomed in tight.
+ */
+function yLabelDecimals(chart: echarts.ECharts | undefined): number {
+  if (!chart) return 1;
+  try {
+    const opt = chart.getOption() as {
+      dataZoom?: Array<{ type?: string; yAxisIndex?: number; startValue?: number; endValue?: number }>;
+    };
+    const dz = (opt.dataZoom ?? []).find((z) => z.type === 'inside' && z.yAxisIndex === 0);
+    if (!dz || dz.startValue === undefined || dz.endValue === undefined) return 1;
+    const range = dz.endValue - dz.startValue;
+    // splitNumber=10 so tick interval ≈ range/10. Need enough decimals to
+    // distinguish ticks that are this far apart.
+    const interval = range / 10;
+    // Need enough decimals so two adjacent ticks (interval apart) display
+    // differently. The threshold is interval >= 10^-n for n decimals.
+    if (interval >= 0.1) return 1;
+    if (interval >= 0.01) return 2;
+    if (interval >= 0.001) return 3;
+    return 4;
+  } catch {
+    return 1;
+  }
+}
+
 function buildOption(
   payload: TimeseriesPayload,
   source: SourceId,
   dataset: DatasetId,
   c: ThemeColors,
   selectedYear: number | null,
+  chart: echarts.ECharts | undefined,
 ): EChartsOption {
   const series = payload.sources[source]?.datasets[dataset];
   if (!series) {
@@ -258,14 +290,14 @@ function buildOption(
       name: datasetLabel,
       nameTextStyle: { color: c.text },
       axisLine: { lineStyle: { color: c.axis } },
-      // Round axis labels to 1 decimal. Default formatter prints the raw
-      // tick value, which for the topmost/bottommost ticks (sitting at
-      // dataMin/dataMax — see min/max below) means full float precision
-      // ("21.167951345435234"). When the user zooms in even slightly,
-      // ECharts re-picks ticks at nicer round values, the label column
-      // shrinks, the grid x position shifts, and the chart "pops".
-      // Fixed precision keeps the label-column width stable across zooms.
-      axisLabel: { color: c.text, formatter: (v: number) => v.toFixed(1) },
+      // Format labels with just enough precision to distinguish adjacent
+      // ticks. At full zoom the y range is ~1.5°C and ticks are at 0.2°C
+      // — 1 decimal works. When zoomed in tightly the interval drops to
+      // 0.05 or 0.01 and 1 decimal collapses neighboring ticks into the
+      // same string ("20.2, 20.2, 20.3, 20.3"). yLabelDecimals queries
+      // the current dataZoom range and picks an interval-appropriate
+      // precision.
+      axisLabel: { color: c.text, formatter: (v: number) => v.toFixed(yLabelDecimals(chart)) },
       splitLine: { lineStyle: { color: c.grid } },
       scale: true,
       // Hint for tick count: with the default (5) and bounds pinned to the
@@ -532,7 +564,7 @@ export const Trends = () => {
     const sel = selectedYear();
     if (!chart || !data) return;
     const colors = readThemeColors();
-    chart.setOption(buildOption(data, src, ds, colors, sel), true);
+    chart.setOption(buildOption(data, src, ds, colors, sel, chart), true);
   });
 
   // Chart and grid are both mounted at all times (display-toggled by the
