@@ -21,16 +21,12 @@ export type SourceId = 'oisst' | 'era5';
 // Raw dataset IDs as they appear in cache keys + S3 filenames + timeseries
 // JSONs. OISST: sst, anom. ERA5: sst, sst_anom, t2m. The available dataset
 // list is source-specific — see DATASETS_BY_SOURCE.
-// `t2m_anom` is listed in the type so the (variable, anomaly) → DatasetId
-// helpers type-check, but it's not yet produced upstream; isValidDataset
-// returns false for (era5, t2m_anom) until the climatology builder gets a
-// t2m pass and DATASETS_BY_SOURCE.era5 gains it.
 export type DatasetId = 'sst' | 'anom' | 'sst_anom' | 't2m' | 't2m_anom';
 
 /** Per-source list of datasets, mirroring upstream sources/{oisst,era5}.py. */
 export const DATASETS_BY_SOURCE: Record<SourceId, DatasetId[]> = {
   oisst: ['sst', 'anom'],
-  era5: ['sst', 'sst_anom', 't2m'],
+  era5: ['sst', 'sst_anom', 't2m', 't2m_anom'],
 };
 
 /** True when this (source, dataset) combination actually exists. */
