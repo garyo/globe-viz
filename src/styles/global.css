@@ -304,13 +304,6 @@ html {
     background: var(--button-bg-hover);
 }
 
-.source-label {
-    font-size: 0.75rem;
-    color: var(--text-tertiary);
-    padding: 0.3rem 0.2rem;
-    user-select: none;
-}
-
 /* Transient toast under the header (e.g. date snapped on source switch). */
 .header-notice {
     position: absolute;

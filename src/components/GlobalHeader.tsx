@@ -124,26 +124,24 @@ export const GlobalHeader = () => {
           </button>
         </div>
 
-        <Show
-          when={sourceChoices().length > 1}
-          fallback={
-            <span class="source-label" title={SOURCE_LABELS[appState.source].full}>
-              {SOURCE_LABELS[appState.source].short}
-            </span>
-          }
+        {/* Every source stays in the list (sized by the longest option, so
+            the header never reflows on variable switch); ones that don't
+            offer the current variable are disabled rather than removed. */}
+        <select
+          class="source-select"
+          aria-label="Data source"
+          title={SOURCE_LABELS[appState.source].full}
+          value={appState.source}
+          onChange={(e) => selectSource(e.currentTarget.value as SourceId)}
         >
-          <select
-            class="source-select"
-            aria-label="Data source"
-            title={SOURCE_LABELS[appState.source].full}
-            value={appState.source}
-            onChange={(e) => selectSource(e.currentTarget.value as SourceId)}
-          >
-            <For each={sourceChoices()}>
-              {(s) => <option value={s}>{SOURCE_LABELS[s].short}</option>}
-            </For>
-          </select>
-        </Show>
+          <For each={appState.availableSources}>
+            {(s) => (
+              <option value={s} disabled={!sourceChoices().includes(s)}>
+                {SOURCE_LABELS[s].short}
+              </option>
+            )}
+          </For>
+        </select>
 
         <ThemeSwitcher />
       </div>
