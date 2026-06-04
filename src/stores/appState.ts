@@ -1,3 +1,4 @@
+import { batch } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { Color, type Texture } from 'three';
 import { readUrlState } from '../lib/url-state';
@@ -328,11 +329,16 @@ export function applyView(source: SourceId, variable: Variable, anomaly: boolean
   const dataset = datasetFor(source, variable, anomaly) ?? datasetFor(source, variable, false);
   if (!dataset) return; // source doesn't offer this variable at all
 
-  if (source !== appState.source) {
-    setAppState('source', source);
-    snapDateToSource(source);
-  }
-  if (dataset !== appState.dataset) setAppState('dataset', dataset);
+  // Batch so effects watching (source, dataset, date) never observe a
+  // half-applied combination — e.g. era5 + oisst's 'anom' — and fire a
+  // doomed fetch for it.
+  batch(() => {
+    if (source !== appState.source) {
+      setAppState('source', source);
+      snapDateToSource(source);
+    }
+    if (dataset !== appState.dataset) setAppState('dataset', dataset);
+  });
   saveState();
 }
 
