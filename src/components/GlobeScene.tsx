@@ -11,7 +11,7 @@ import {
   createTextureLoader,
   resizeRendererToDisplaySize,
 } from '../lib/scene/setup';
-import { createCamera, createControls, updateCameraAspect, updateControlsForResize } from '../lib/scene/camera';
+import { createCamera, createControls, updateCameraAspect, refitCameraForResize } from '../lib/scene/camera';
 import { createGlobe, updateGlobeTexture } from '../lib/scene/globe';
 import { loadCoastlines, type CoastlineOverlay } from '../lib/scene/coastlines';
 import { fetchDatasetAssets } from '../lib/data/assets';
@@ -302,6 +302,7 @@ export const GlobeScene = () => {
 
     if (resizeRendererToDisplaySize(renderer)) {
       updateCameraAspect(camera, renderer.domElement);
+      if (controls) refitCameraForResize(camera, controls, renderer.domElement);
       if (coastlines) {
         coastlines.setResolution(renderer.domElement.width, renderer.domElement.height);
       }
@@ -346,7 +347,7 @@ export const GlobeScene = () => {
     const handleResize = createResizeHandler(() => {
       updateCameraAspect(camera, renderer.domElement);
       if (controls) {
-        updateControlsForResize(controls);
+        refitCameraForResize(camera, controls, renderer.domElement);
       }
     }, 150);
 

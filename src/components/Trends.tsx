@@ -72,6 +72,24 @@ const DATASET_TITLE_FRAGMENT: Record<DatasetId, string> = {
   t2m_anom: '2 m Air Temp Anomaly vs. 1971–2000 mean',
 };
 
+// Phone-width titles: the full fragment + year range doesn't fit.
+const DATASET_TITLE_SHORT: Record<DatasetId, string> = {
+  sst: 'Sea Surface Temp',
+  anom: 'SST Anomaly',
+  sst_anom: 'SST Anomaly',
+  t2m: 'Air Temp',
+  t2m_anom: 'Air Temp Anomaly',
+};
+
+/** Layout regime for the single chart, derived from the container size.
+ * `narrow` reworks the chart for phone-portrait widths (short title,
+ * horizontal legend, tight margins); `short` reclaims vertical space on
+ * phone-landscape heights. */
+interface ChartLayout {
+  narrow: boolean;
+  short: boolean;
+}
+
 function findRecord(yearsSeries: YearSeries[]): { year: number; doy: number; value: number } | null {
   let best: { year: number; doy: number; value: number } | null = null;
   for (const s of yearsSeries) {
@@ -120,7 +138,10 @@ function buildOption(
   c: ThemeColors,
   selectedYear: number | null,
   chart: echarts.ECharts | undefined,
+  layout: ChartLayout,
 ): EChartsOption {
+  const { narrow, short } = layout;
+  const compact = narrow || short;
   const series = payload.sources[source]?.datasets[dataset];
   if (!series) {
     return {
@@ -183,7 +204,9 @@ function buildOption(
 
   const datasetLabel = DATASET_AXIS_LABELS[dataset];
   const regionLabel = payload.region_label || REGION_LABELS[payload.region] || payload.region;
-  const title = `${regionLabel} — ${DATASET_TITLE_FRAGMENT[dataset]}, ${firstYear}–${lastYear}`;
+  const title = narrow
+    ? `${regionLabel} — ${DATASET_TITLE_SHORT[dataset]}`
+    : `${regionLabel} — ${DATASET_TITLE_FRAGMENT[dataset]}, ${firstYear}–${lastYear}`;
 
   // Match the static graph's labeling: the two oldest years and the five
   // most recent (current year + four prior). Newest first so the current
@@ -209,7 +232,10 @@ function buildOption(
         coord: [record.doy, record.value],
         label: {
           formatter: `record: ${dayLabel(record.doy)}, ${record.year}\n${record.value.toFixed(2)}°C`,
-          position: 'top',
+          // The record sits near the top of the plot; on compact layouts a
+          // label above it collides with the title/legend band, so tuck it
+          // beside the dot, on whichever side has room.
+          position: compact ? (record.doy < 183 ? 'right' : 'left') : 'top',
         },
       });
     }
@@ -221,7 +247,9 @@ function buildOption(
         coord: [doy, val],
         label: {
           formatter: `${dayLabel(doy)}, ${lastYear}\n${val.toFixed(2)}°C`,
-          position: 'right',
+          // Late-year points sit near the right edge; keep the label inside
+          // the plot on narrow screens.
+          position: narrow ? 'left' : 'right',
         },
       });
     }
@@ -231,7 +259,7 @@ function buildOption(
         symbol: 'circle',
         symbolSize: 8,
         itemStyle: { color: c.yearRecord, borderColor: c.text, borderWidth: 1 },
-        label: { color: c.text, fontSize: 11 },
+        label: { color: c.text, fontSize: narrow ? 10 : 11 },
         data: markData,
       };
     }
@@ -245,12 +273,22 @@ function buildOption(
     animation: false,
     title: {
       text: title,
-      subtext: `Source: ${SOURCE_LABELS[source]} · area-weighted average · ${series.dates.length.toLocaleString()} daily values`,
+      // The source/count subtitle is the first thing to go when space is
+      // tight — it overlaps the record annotation on phone screens.
+      subtext: compact
+        ? undefined
+        : `Source: ${SOURCE_LABELS[source]} · area-weighted average · ${series.dates.length.toLocaleString()} daily values`,
       left: 'center',
-      textStyle: { color: c.text, fontSize: 16 },
+      textStyle: { color: c.text, fontSize: narrow ? 13 : 16 },
       subtextStyle: { color: c.subtitle, fontSize: 11 },
     },
-    grid: { left: 60, right: 30, top: 70, bottom: 80 },
+    grid: {
+      left: narrow ? 44 : 60,
+      right: narrow ? 14 : 30,
+      // compact: one-line title plus the horizontal legend row.
+      top: narrow ? 58 : short ? 62 : 70,
+      bottom: compact ? 48 : 80,
+    },
     tooltip: {
       trigger: 'axis',
       backgroundColor: c.tooltipBg,
@@ -287,7 +325,9 @@ function buildOption(
     },
     yAxis: {
       type: 'value',
-      name: datasetLabel,
+      // The axis name overlaps the tick labels and record annotation on
+      // small screens; the title already identifies the dataset there.
+      name: compact ? undefined : datasetLabel,
       nameTextStyle: { color: c.text },
       axisLine: { lineStyle: { color: c.axis } },
       // Format labels with just enough precision to distinguish adjacent
@@ -303,8 +343,9 @@ function buildOption(
       // Hint for tick count: with the default (5) and bounds pinned to the
       // raw data extent, ECharts ends up subdividing into ugly 0.3-style
       // steps. 10 nudges the algorithm toward the 1/2/5 family at the next
-      // finer magnitude (e.g. 0.2 for a ~1.5°C range).
-      splitNumber: 10,
+      // finer magnitude (e.g. 0.2 for a ~1.5°C range). On short plots 10
+      // ticks crowd into each other; halve it there.
+      splitNumber: short ? 5 : 10,
       // Tie the axis range exactly to the data, no auto-padding. Without
       // this, scale:true pads ~5% above and below, which means the rendered
       // y range is wider than what dataZoom (which talks in data-extent
@@ -322,8 +363,8 @@ function buildOption(
       {
         type: 'slider',
         xAxisIndex: 0,
-        height: 20,
-        bottom: 30,
+        height: compact ? 14 : 20,
+        bottom: compact ? 6 : 30,
         textStyle: { color: c.text },
         borderColor: c.axis,
         fillerColor: c.grid,
@@ -331,23 +372,38 @@ function buildOption(
       },
       { type: 'inside', yAxisIndex: 0, zoomOnMouseWheel: false, moveOnMouseWheel: false },
     ],
-    legend: {
-      show: true,
-      data: legendYears,
-      selectedMode: false,
-      orient: 'vertical',
-      right: 40,
-      bottom: 90,
-      itemWidth: 18,
-      itemHeight: 2,
-      itemGap: 6,
-      textStyle: { color: c.text, fontSize: 11 },
-      backgroundColor: c.tooltipBg,
-      borderColor: c.tooltipBorder,
-      borderWidth: 1,
-      borderRadius: 4,
-      padding: [6, 10],
-    },
+    // compact: a single legend row under the title, where it can't cover the
+    // data. Otherwise the classic floating box at the right of the plot.
+    legend: compact
+      ? {
+          show: true,
+          data: legendYears,
+          selectedMode: false,
+          orient: 'horizontal',
+          top: narrow ? 26 : 30,
+          left: 'center',
+          itemWidth: 12,
+          itemHeight: 2,
+          itemGap: 5,
+          textStyle: { color: c.text, fontSize: 10 },
+        }
+      : {
+          show: true,
+          data: legendYears,
+          selectedMode: false,
+          orient: 'vertical',
+          right: 40,
+          bottom: 90,
+          itemWidth: 18,
+          itemHeight: 2,
+          itemGap: 6,
+          textStyle: { color: c.text, fontSize: 11 },
+          backgroundColor: c.tooltipBg,
+          borderColor: c.tooltipBorder,
+          borderWidth: 1,
+          borderRadius: 4,
+          padding: [6, 10],
+        },
     series: echartsSeries,
   };
 }
@@ -371,10 +427,26 @@ export const Trends = () => {
   // "no manual highlight" (only the default current/prev-year styling applies).
   const [selectedYear, setSelectedYear] = createSignal<number | null>(null);
 
+  // Container-size layout regime, re-measured on resize so the chart
+  // restyles itself when e.g. a phone rotates. 0×0 (hidden container)
+  // keeps the previous regime.
+  const [chartLayout, setChartLayout] = createSignal<ChartLayout>({ narrow: false, short: false });
+  const measureLayout = () => {
+    if (!chartRef) return;
+    const w = chartRef.clientWidth;
+    const h = chartRef.clientHeight;
+    if (w === 0 || h === 0) return;
+    setChartLayout({ narrow: w < 620, short: h < 420 });
+  };
+
   onMount(() => {
     if (!chartRef) return;
     chart = echarts.init(chartRef, undefined, { renderer: 'canvas' });
-    resizeHandler = () => chart?.resize();
+    measureLayout();
+    resizeHandler = () => {
+      chart?.resize();
+      measureLayout();
+    };
     window.addEventListener('resize', resizeHandler);
 
     // Wheel zoom: take over from ECharts so we can (a) tame the sensitivity
@@ -562,9 +634,10 @@ export const Trends = () => {
     // applyTheme() effect has already written to <html>.
     appState.effectiveTheme;
     const sel = selectedYear();
+    const layout = chartLayout();
     if (!chart || !data) return;
     const colors = readThemeColors();
-    chart.setOption(buildOption(data, src, ds, colors, sel, chart), true);
+    chart.setOption(buildOption(data, src, ds, colors, sel, chart, layout), true);
   });
 
   // Chart and grid are both mounted at all times (display-toggled by the
@@ -573,7 +646,10 @@ export const Trends = () => {
   // pass — its measurements during display:none are zero.
   createEffect(() => {
     if (appState.trendsMode === 'single') {
-      requestAnimationFrame(() => chart?.resize());
+      requestAnimationFrame(() => {
+        chart?.resize();
+        measureLayout();
+      });
     }
   });
 

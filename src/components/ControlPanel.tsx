@@ -10,11 +10,11 @@ import { QuickDateSlider } from './controls/QuickDateSlider';
 export const ControlPanel = () => {
   const [debugOpen, setDebugOpen] = createSignal(false);
   const [menuVisible, setMenuVisible] = createSignal(true);
-  const [_, setMobile] = createSignal(false);
 
-  // Detect mobile on mount (client-side only)
+  // On phones the open panel covers most of the globe — start closed there
+  // (the quick date slider takes over). Client-side only, hence onMount.
   onMount(() => {
-    setMobile(isMobile());
+    if (isMobile()) setMenuVisible(false);
   });
 
   const toggleMenu = () => {
