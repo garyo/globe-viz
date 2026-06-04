@@ -3,13 +3,14 @@ import {
   appState,
   setAppState,
   saveState,
-  isValidDataset,
-  defaultDatasetFor,
+  applyView,
+  selectVariable,
   variableOf,
   anomalyOf,
-  datasetFor,
-  variablesFor,
+  sourcesFor,
+  allVariables,
   hasAnomalyFor,
+  SOURCE_LABELS,
   type TabId,
   type SourceId,
   type Variable,
@@ -22,13 +23,9 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'about', label: 'About' },
 ];
 
-const SOURCE_LABELS: Record<SourceId, { short: string; full: string }> = {
-  oisst: { short: 'OISST', full: 'NOAA OISST' },
-  era5: { short: 'ERA5', full: 'ECMWF ERA5' },
-};
-
-// Variable buttons (orthogonal to the anomaly toggle below). OISST has only
-// SST; ERA5 adds 2 m air temperature.
+// Variable buttons. Every variable is always visible; picking one hops to a
+// source that offers it (Air Temp implies ERA5), so the control never
+// appears/disappears as the source changes.
 const VARIABLE_LABELS: Record<Variable, { icon: string; short: string; long: string }> = {
   sst: { icon: '🌡', short: 'Sea Temp', long: 'Sea-surface temperature' },
   t2m: { icon: '🌬', short: 'Air Temp', long: '2 m air temperature' },
@@ -41,63 +38,19 @@ export const GlobalHeader = () => {
     saveState();
   };
 
-  // Variable + anomaly are the user-facing knobs; we compose them back into
-  // the raw DatasetId so the rest of the app keeps working unchanged.
+  // The user-facing knobs, in priority order: variable, actual-vs-anomaly,
+  // then source (a provenance detail, demoted to a small picker). All
+  // selection logic lives in appState (applyView / selectVariable) so the
+  // keyboard shortcuts share it.
   const currentVariable = (): Variable => variableOf(appState.dataset);
   const currentAnomaly = (): boolean => anomalyOf(appState.dataset);
 
-  const applyDatasetChoice = (variable: Variable, anomaly: boolean) => {
-    const next = datasetFor(appState.source, variable, anomaly);
-    if (!next || next === appState.dataset) return;
-    setAppState('dataset', next);
-    saveState();
-  };
+  const setAnomaly = (anomaly: boolean) =>
+    applyView(appState.source, currentVariable(), anomaly);
+  const selectSource = (s: SourceId) =>
+    applyView(s, currentVariable(), currentAnomaly());
 
-  const selectVariable = (v: Variable) => {
-    // Keep anomaly preference if the new variable supports it; otherwise drop
-    // back to raw (the user can re-check if/when t2m_anom ships).
-    const wantAnom = currentAnomaly() && hasAnomalyFor(appState.source, v);
-    applyDatasetChoice(v, wantAnom);
-  };
-
-  const toggleAnomaly = () => {
-    applyDatasetChoice(currentVariable(), !currentAnomaly());
-  };
-
-  const selectSource = (id: SourceId) => {
-    if (appState.source === id) return;
-    setAppState('source', id);
-
-    // Reconcile dataset: fall back to the source's first dataset (sst) if the
-    // current dataset doesn't exist for this source.
-    if (!isValidDataset(id, appState.dataset)) {
-      setAppState('dataset', defaultDatasetFor(id));
-    }
-
-    // Reconcile date: ERA5 has ~5-day reanalysis latency vs OISST's ~2 days,
-    // so the latest few dates may not exist for the source we just switched to.
-    // Snap to the most recent date in the source's set that's ≤ the current
-    // date; if none exist, fall back to that source's latest.
-    const srcDates = appState.sourceDates[id];
-    if (srcDates && srcDates.length > 0) {
-      const currentDate = appState.availableDates[appState.currentDateIndex];
-      if (currentDate && !srcDates.includes(currentDate)) {
-        // findLast not in all TS lib targets; walk the (sorted) array.
-        let candidate: string | undefined;
-        for (let i = srcDates.length - 1; i >= 0; i--) {
-          if (srcDates[i] <= currentDate) { candidate = srcDates[i]; break; }
-        }
-        const snapDate = candidate ?? srcDates[srcDates.length - 1];
-        const idx = appState.availableDates.indexOf(snapDate);
-        if (idx >= 0) setAppState('currentDateIndex', idx);
-      }
-    }
-
-    saveState();
-  };
-
-  // Variables visible to the user depend on the active source.
-  const variablesForSource = () => variablesFor(appState.source);
+  const sourceChoices = () => sourcesFor(currentVariable());
   const anomalyAvailable = () => hasAnomalyFor(appState.source, currentVariable());
 
   return (
@@ -122,29 +75,9 @@ export const GlobalHeader = () => {
       </nav>
 
       <div class="global-controls">
-        <Show when={appState.availableSources.length > 1}>
-          <div class="segmented" role="radiogroup" aria-label="Source">
-            <For each={appState.availableSources}>
-              {(s) => (
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={appState.source === s}
-                  aria-label={SOURCE_LABELS[s].full}
-                  classList={{ active: appState.source === s }}
-                  onClick={() => selectSource(s)}
-                  title={SOURCE_LABELS[s].full}
-                >
-                  <span class="label">{SOURCE_LABELS[s].short}</span>
-                </button>
-              )}
-            </For>
-          </div>
-        </Show>
-
-        <Show when={variablesForSource().length > 1}>
+        <Show when={allVariables().length > 1}>
           <div class="segmented" role="radiogroup" aria-label="Variable">
-            <For each={variablesForSource()}>
+            <For each={allVariables()}>
               {(v) => (
                 <button
                   type="button"
@@ -163,26 +96,61 @@ export const GlobalHeader = () => {
           </div>
         </Show>
 
-        <label
-          class="anomaly-toggle"
-          title={
-            anomalyAvailable()
-              ? 'Show anomaly vs. 1971–2000 climatology'
-              : 'Anomaly not yet available for this variable'
+        <div class="segmented" role="radiogroup" aria-label="Mode">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={!currentAnomaly()}
+            classList={{ active: !currentAnomaly() }}
+            onClick={() => setAnomaly(false)}
+            title="Absolute temperature"
+          >
+            Actual
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={currentAnomaly()}
+            classList={{ active: currentAnomaly() }}
+            disabled={!anomalyAvailable()}
+            onClick={() => setAnomaly(true)}
+            title={
+              anomalyAvailable()
+                ? 'Difference vs. 1971–2000 climatology'
+                : 'Anomaly not yet available for this variable'
+            }
+          >
+            Δ Anomaly
+          </button>
+        </div>
+
+        <Show
+          when={sourceChoices().length > 1}
+          fallback={
+            <span class="source-label" title={SOURCE_LABELS[appState.source].full}>
+              {SOURCE_LABELS[appState.source].short}
+            </span>
           }
         >
-          <input
-            type="checkbox"
-            checked={currentAnomaly()}
-            disabled={!anomalyAvailable()}
-            onChange={toggleAnomaly}
-            aria-label="Show anomaly"
-          />
-          <span class="label-mobile-hide">Δ Anomaly</span>
-        </label>
+          <select
+            class="source-select"
+            aria-label="Data source"
+            title={SOURCE_LABELS[appState.source].full}
+            value={appState.source}
+            onChange={(e) => selectSource(e.currentTarget.value as SourceId)}
+          >
+            <For each={sourceChoices()}>
+              {(s) => <option value={s}>{SOURCE_LABELS[s].short}</option>}
+            </For>
+          </select>
+        </Show>
 
         <ThemeSwitcher />
       </div>
+
+      <Show when={appState.notice}>
+        <div class="header-notice" role="status">{appState.notice}</div>
+      </Show>
     </header>
   );
 };

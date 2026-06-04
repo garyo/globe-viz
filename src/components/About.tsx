@@ -53,7 +53,9 @@ export const About = () => {
               <li><strong>Spacebar</strong> — Play/Pause animation</li>
               <li><strong>Left/Right Arrows</strong> — Navigate backward/forward one day</li>
               <li><strong>R</strong> — Toggle auto-rotation on/off</li>
-              <li><strong>T</strong> — Switch between Temperature and Temp Anomaly datasets</li>
+              <li><strong>A</strong> — Toggle Actual / Anomaly (hold to peek, release to snap back)</li>
+              <li><strong>V</strong> — Switch variable (sea / air temperature)</li>
+              <li><strong>S</strong> — Switch data source (OISST / ERA5)</li>
               <li><strong>?</strong> — Open this About tab</li>
             </ul>
           </li>

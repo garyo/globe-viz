@@ -160,6 +160,7 @@ html {
    ========================================================================= */
 
 .global-header {
+    position: relative;  /* anchors .header-notice */
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -258,6 +259,16 @@ html {
     background: var(--button-bg-hover);
 }
 
+.segmented button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.segmented button:disabled:hover {
+    color: var(--text-secondary);
+    background: transparent;
+}
+
 .segmented button.active {
     background: var(--accent-bg);
     color: var(--accent);
@@ -272,44 +283,54 @@ html {
     display: inline;
 }
 
-/* Anomaly toggle: visually consistent with .segmented buttons so the
-   (variable, anomaly) controls read as one unit, even though anomaly is a
-   single checkbox rather than a radio group. */
-.anomaly-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
+/* Source picker — deliberately quieter than the variable/mode segmented
+   controls: data provenance is a detail, not a primary choice. Collapses to
+   a static label when the current variable has only one source. */
+.source-select {
     background: var(--button-bg);
+    color: var(--text-secondary);
     border: 1px solid var(--border);
     border-radius: 6px;
-    padding: 0.35rem 0.6rem;
-    font-size: 0.8rem;
-    color: var(--text-secondary);
+    padding: 0.3rem 0.4rem;
+    font-size: 0.75rem;
+    font-family: inherit;
     cursor: pointer;
     transition: background 0.15s, color 0.15s;
-    line-height: 1;
-    user-select: none;
 }
 
-.anomaly-toggle:hover {
+.source-select:hover {
     color: var(--text-primary);
     background: var(--button-bg-hover);
 }
 
-.anomaly-toggle:has(input:checked) {
-    background: var(--accent-bg);
-    color: var(--accent);
+.source-label {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    padding: 0.3rem 0.2rem;
+    user-select: none;
 }
 
-.anomaly-toggle:has(input:disabled) {
-    opacity: 0.4;
-    cursor: not-allowed;
+/* Transient toast under the header (e.g. date snapped on source switch). */
+.header-notice {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-panel);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    box-shadow: var(--shadow);
+    z-index: 20;
+    animation: notice-in 0.15s ease-out;
 }
 
-.anomaly-toggle input {
-    margin: 0;
-    cursor: inherit;
-    accent-color: var(--accent);
+@keyframes notice-in {
+    from { opacity: 0; transform: translate(-50%, -4px); }
+    to   { opacity: 1; transform: translate(-50%, 0); }
 }
 
 /* =========================================================================

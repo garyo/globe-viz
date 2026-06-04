@@ -18,6 +18,11 @@ export type EffectiveTheme = 'light' | 'dark';
 
 // Climate-data sources defined upstream in sea-surface-temp-viz/sources/.
 export type SourceId = 'oisst' | 'era5';
+
+export const SOURCE_LABELS: Record<SourceId, { short: string; full: string }> = {
+  oisst: { short: 'OISST', full: 'NOAA OISST' },
+  era5: { short: 'ERA5', full: 'ECMWF ERA5' },
+};
 // Raw dataset IDs as they appear in cache keys + S3 filenames + timeseries
 // JSONs. OISST: sst, anom. ERA5: sst, sst_anom, t2m. The available dataset
 // list is source-specific — see DATASETS_BY_SOURCE.
@@ -73,11 +78,16 @@ export function datasetFor(
   return isValidDataset(source, candidate) ? candidate : null;
 }
 
-/** Which variables this source offers (drives the variable selector). */
-export function variablesFor(source: SourceId): Variable[] {
-  const out: Variable[] = ['sst'];
-  if (DATASETS_BY_SOURCE[source].includes('t2m')) out.push('t2m');
-  return out;
+/** Which available sources offer this variable (drives the source picker). */
+export function sourcesFor(variable: Variable): SourceId[] {
+  return appState.availableSources.filter((s) => datasetFor(s, variable, false) !== null);
+}
+
+/** All variables offered by any available source (drives the variable
+ * selector — every variable is always visible; picking one hops source if
+ * needed, see selectVariable). */
+export function allVariables(): Variable[] {
+  return (['sst', 't2m'] as Variable[]).filter((v) => sourcesFor(v).length > 0);
 }
 
 /** Whether anomaly is available for this (source, variable). */
@@ -146,6 +156,10 @@ export interface AppState {
   isLoading: boolean;
   missingDateError: string | null;  // Error message if current date data is missing
 
+  // Transient toast (e.g. "date adjusted" on source switch). Auto-cleared by
+  // showNotice; never persisted.
+  notice: string | null;
+
   // Mobile UI
   mobileMenuOpen: boolean;
 }
@@ -195,6 +209,7 @@ const initialState: AppState = {
   trendsMode: 'single',
   isLoading: true,
   missingDateError: null,
+  notice: null,
   mobileMenuOpen: false,
 };
 
@@ -300,6 +315,61 @@ export function saveState() {
   // URL sync is handled by a reactive effect in AppLoader so it picks up
   // every relevant change (including date scrubbing, which intentionally
   // bypasses saveState).
+}
+
+/**
+ * Switch the globe view to (source, variable, anomaly) in one step,
+ * reconciling everything downstream: falls back to the raw dataset when the
+ * anomaly variant doesn't exist, and snaps the current date when the new
+ * source doesn't cover it (sources differ in latency). Header controls and
+ * keyboard shortcuts both go through here.
+ */
+export function applyView(source: SourceId, variable: Variable, anomaly: boolean) {
+  const dataset = datasetFor(source, variable, anomaly) ?? datasetFor(source, variable, false);
+  if (!dataset) return; // source doesn't offer this variable at all
+
+  if (source !== appState.source) {
+    setAppState('source', source);
+    snapDateToSource(source);
+  }
+  if (dataset !== appState.dataset) setAppState('dataset', dataset);
+  saveState();
+}
+
+/** Pick a variable, hopping source when the current one doesn't offer it
+ * (e.g. Air Temp implies ERA5). Keeps the anomaly mode where possible. */
+export function selectVariable(variable: Variable) {
+  const sources = sourcesFor(variable);
+  if (sources.length === 0) return;
+  const source = sources.includes(appState.source) ? appState.source : sources[0];
+  applyView(source, variable, anomalyOf(appState.dataset));
+}
+
+/** Snap currentDateIndex to the nearest date the source has (≤ current,
+ * else the source's latest), telling the user when it moves. */
+function snapDateToSource(source: SourceId) {
+  const srcDates = appState.sourceDates[source];
+  if (!srcDates || srcDates.length === 0) return;
+  const currentDate = appState.availableDates[appState.currentDateIndex];
+  if (!currentDate || srcDates.includes(currentDate)) return;
+  // findLast not in all TS lib targets; walk the (sorted) array.
+  let candidate: string | undefined;
+  for (let i = srcDates.length - 1; i >= 0; i--) {
+    if (srcDates[i] <= currentDate) { candidate = srcDates[i]; break; }
+  }
+  const snapDate = candidate ?? srcDates[srcDates.length - 1];
+  const idx = appState.availableDates.indexOf(snapDate);
+  if (idx >= 0 && idx !== appState.currentDateIndex) {
+    setAppState('currentDateIndex', idx);
+    showNotice(`${SOURCE_LABELS[source].short} has no data for ${currentDate} — showing ${snapDate}`);
+  }
+}
+
+let noticeTimeout: number | undefined;
+export function showNotice(message: string) {
+  setAppState('notice', message);
+  if (noticeTimeout) clearTimeout(noticeTimeout);
+  noticeTimeout = window.setTimeout(() => setAppState('notice', null), 4000);
 }
 
 // Helper to convert hex color to Three.js Color

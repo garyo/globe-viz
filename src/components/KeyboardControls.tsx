@@ -1,8 +1,23 @@
 import { onMount, onCleanup } from 'solid-js';
-import { appState, setAppState, saveState, DATASETS_BY_SOURCE } from '../stores/appState';
+import {
+  appState,
+  setAppState,
+  saveState,
+  applyView,
+  selectVariable,
+  variableOf,
+  anomalyOf,
+  sourcesFor,
+  allVariables,
+} from '../stores/appState';
 
 export const KeyboardControls = () => {
   onMount(() => {
+    // Hold-to-peek state for the A key: a quick tap toggles anomaly; holding
+    // shows the other mode only until release (before/after comparison).
+    const PEEK_THRESHOLD_MS = 400;
+    let anomalyPeek: { prior: boolean; downAt: number } | null = null;
+
     const handleKeyPress = (e: KeyboardEvent) => {
       // Ignore if modifier keys are pressed (could interfere with browser shortcuts)
       if (e.ctrlKey || e.altKey || e.metaKey) {
@@ -61,13 +76,31 @@ export const KeyboardControls = () => {
           setAppState('autoRotate', !appState.autoRotate);
           break;
 
-        case 't': { // T - toggle dataset within the current source
+        case 'a': { // A - toggle actual/anomaly (hold to peek)
+          if (e.repeat) return; // one flip per press, not rapid cycling
           e.preventDefault();
-          const datasets = DATASETS_BY_SOURCE[appState.source];
-          const idx = datasets.indexOf(appState.dataset);
-          const next = datasets[(idx + 1) % datasets.length];
-          setAppState('dataset', next);
-          saveState();
+          const prior = anomalyOf(appState.dataset);
+          anomalyPeek = { prior, downAt: performance.now() };
+          applyView(appState.source, variableOf(appState.dataset), !prior);
+          break;
+        }
+
+        case 'v': { // V - cycle variable (sea temp / air temp)
+          e.preventDefault();
+          const vars = allVariables();
+          if (vars.length < 2) return;
+          const next = vars[(vars.indexOf(variableOf(appState.dataset)) + 1) % vars.length];
+          selectVariable(next);
+          break;
+        }
+
+        case 's': { // S - cycle source for the current variable
+          e.preventDefault();
+          const variable = variableOf(appState.dataset);
+          const sources = sourcesFor(variable);
+          if (sources.length < 2) return;
+          const next = sources[(sources.indexOf(appState.source) + 1) % sources.length];
+          applyView(next, variable, anomalyOf(appState.dataset));
           break;
         }
 
@@ -79,10 +112,21 @@ export const KeyboardControls = () => {
       }
     };
 
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'a' || !anomalyPeek) return;
+      // Held long enough to be a peek: snap back to the prior mode.
+      if (performance.now() - anomalyPeek.downAt > PEEK_THRESHOLD_MS) {
+        applyView(appState.source, variableOf(appState.dataset), anomalyPeek.prior);
+      }
+      anomalyPeek = null;
+    };
+
     document.addEventListener('keydown', handleKeyPress);
+    document.addEventListener('keyup', handleKeyUp);
 
     onCleanup(() => {
       document.removeEventListener('keydown', handleKeyPress);
+      document.removeEventListener('keyup', handleKeyUp);
     });
   });
 
