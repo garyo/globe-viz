@@ -120,6 +120,14 @@ export interface AppState {
   // sources have different latencies (OISST: ~2 days, ERA5: ~5–7 days).
   sourceDates: Record<SourceId, string[]>;
 
+  // Per-(source, dataset) set of dates that actually have a texture in S3,
+  // when index.json exposes that granularity. Anomaly variants lag their base
+  // variable (and historically weren't backfilled), so the same date can have
+  // an SST texture but no SST-anomaly texture. Used to snap the date when the
+  // user switches into a dataset that lacks the current date. Falls back to
+  // sourceDates / availableDates for older index.json shapes.
+  datasetDates: Record<SourceId, Partial<Record<DatasetId, string[]>>>;
+
   // Active dataset within the source. Raw ID matching cache-key segment.
   dataset: DatasetId;
 
@@ -188,6 +196,7 @@ const initialState: AppState = {
   source: 'oisst',
   availableSources: ['oisst'],
   sourceDates: { oisst: [], era5: [] },
+  datasetDates: { oisst: {}, era5: {} },
   dataset: 'anom',
   landColor: '#aaaaaa',
   autoRotate: false,
@@ -333,11 +342,12 @@ export function applyView(source: SourceId, variable: Variable, anomaly: boolean
   // half-applied combination — e.g. era5 + oisst's 'anom' — and fire a
   // doomed fetch for it.
   batch(() => {
-    if (source !== appState.source) {
-      setAppState('source', source);
-      snapDateToSource(source);
-    }
+    if (source !== appState.source) setAppState('source', source);
     if (dataset !== appState.dataset) setAppState('dataset', dataset);
+    // Snap after both are applied so we check against the new (source, dataset)
+    // — e.g. toggling anomaly on a recent date the anomaly texture doesn't
+    // cover yet, or hopping to a source/dataset with a shorter history.
+    snapDateToSelection(source, dataset);
   });
   saveState();
 }
@@ -351,23 +361,41 @@ export function selectVariable(variable: Variable) {
   applyView(source, variable, anomalyOf(appState.dataset));
 }
 
-/** Snap currentDateIndex to the nearest date the source has (≤ current,
- * else the source's latest), telling the user when it moves. */
-function snapDateToSource(source: SourceId) {
-  const srcDates = appState.sourceDates[source];
-  if (!srcDates || srcDates.length === 0) return;
+/** Dates that actually have a texture for this (source, dataset). Prefers the
+ * per-dataset breakdown from index.json, falling back to the source-level set
+ * and finally the union — so older index.json shapes still work. */
+export function datesForSelection(source: SourceId, dataset: DatasetId): string[] {
+  return (
+    appState.datasetDates[source]?.[dataset]
+    ?? appState.sourceDates[source]
+    ?? appState.availableDates
+  );
+}
+
+/** Human-readable name for a (source, dataset) pair, for date-snap notices. */
+function selectionLabel(source: SourceId, dataset: DatasetId): string {
+  const variable = variableOf(dataset) === 't2m' ? 'air temp' : 'SST';
+  const anom = anomalyOf(dataset) ? ' anomaly' : '';
+  return `${SOURCE_LABELS[source].short} ${variable}${anom}`;
+}
+
+/** Snap currentDateIndex to the nearest date the (source, dataset) has
+ * (≤ current, else its latest), telling the user when it moves. */
+function snapDateToSelection(source: SourceId, dataset: DatasetId) {
+  const dates = datesForSelection(source, dataset);
+  if (!dates || dates.length === 0) return;
   const currentDate = appState.availableDates[appState.currentDateIndex];
-  if (!currentDate || srcDates.includes(currentDate)) return;
+  if (!currentDate || dates.includes(currentDate)) return;
   // findLast not in all TS lib targets; walk the (sorted) array.
   let candidate: string | undefined;
-  for (let i = srcDates.length - 1; i >= 0; i--) {
-    if (srcDates[i] <= currentDate) { candidate = srcDates[i]; break; }
+  for (let i = dates.length - 1; i >= 0; i--) {
+    if (dates[i] <= currentDate) { candidate = dates[i]; break; }
   }
-  const snapDate = candidate ?? srcDates[srcDates.length - 1];
+  const snapDate = candidate ?? dates[dates.length - 1];
   const idx = appState.availableDates.indexOf(snapDate);
   if (idx >= 0 && idx !== appState.currentDateIndex) {
     setAppState('currentDateIndex', idx);
-    showNotice(`${SOURCE_LABELS[source].short} has no data for ${currentDate} — showing ${snapDate}`);
+    showNotice(`${selectionLabel(source, dataset)} has no data for ${currentDate} — showing ${snapDate}`);
   }
 }
 

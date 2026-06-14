@@ -7,6 +7,7 @@ import {
   isValidDataset,
   defaultDatasetFor,
   type SourceId,
+  type DatasetId,
 } from '../stores/appState';
 import { fetchDateIndex, fetchDatasetAssets } from '../lib/data/assets';
 import { TextureLoader } from 'three';
@@ -53,11 +54,19 @@ export const AppLoader: Component = () => {
       const sourcesList: SourceId[] = indexSources.length > 0 ? indexSources : ['oisst'];
       setAppState('availableSources', sourcesList);
 
-      // Per-source dated-texture sets. Falls back to the union (dateIndex.dates)
-      // for sources without an explicit entry — covers older index.json shapes.
+      // Per-source (and per-dataset, when the index exposes it) dated-texture
+      // sets. Falls back to the union (dateIndex.dates) for sources without an
+      // explicit entry — covers older index.json shapes.
       for (const src of KNOWN_SOURCES) {
         const meta = dateIndex.sources?.[src];
         setAppState('sourceDates', src, meta?.dates ?? dateIndex.dates);
+        const dsMap: Partial<Record<DatasetId, string[]>> = {};
+        if (meta?.datasets) {
+          for (const [ds, info] of Object.entries(meta.datasets)) {
+            dsMap[ds as DatasetId] = info.dates;
+          }
+        }
+        setAppState('datasetDates', src, dsMap);
       }
 
       // Reconcile persisted source against what's actually available.
@@ -75,8 +84,14 @@ export const AppLoader: Component = () => {
       // source lags behind OISST (ERA5's ~5-day reanalysis latency).
       const urlDate = consumePendingDateFromUrl();
       const sourceMeta = dateIndex.sources?.[appState.source];
+      // Prefer the active dataset's latest (anomaly variants can lag the base
+      // variable), then the source's latest, then the union latest — so we
+      // don't pick a date the chosen dataset has no texture for and trigger
+      // the oisst fallback below.
+      const datasetMeta = sourceMeta?.datasets?.[appState.dataset];
       const initialDate: string =
         (urlDate && dateIndex.dates.includes(urlDate) ? urlDate : undefined)
+        ?? datasetMeta?.latest
         ?? sourceMeta?.latest
         ?? dateIndex.latest;
       const initialIndex = dateIndex.dates.indexOf(initialDate);
@@ -144,10 +159,25 @@ export const AppLoader: Component = () => {
           // Only update if we have new dates
           if (newDateIndex.dates.length > appState.availableDates.length) {
             console.log(`Found ${newDateIndex.dates.length - appState.availableDates.length} new date(s)`);
+            const wasAtEnd = appState.currentDateIndex === appState.availableDates.length - 1;
             setAppState('availableDates', newDateIndex.dates);
 
+            // Refresh per-source/dataset sets so date-snapping reflects newly
+            // published textures (e.g. an anomaly date that just landed).
+            for (const src of KNOWN_SOURCES) {
+              const meta = newDateIndex.sources?.[src];
+              setAppState('sourceDates', src, meta?.dates ?? newDateIndex.dates);
+              const dsMap: Partial<Record<DatasetId, string[]>> = {};
+              if (meta?.datasets) {
+                for (const [ds, info] of Object.entries(meta.datasets)) {
+                  dsMap[ds as DatasetId] = info.dates;
+                }
+              }
+              setAppState('datasetDates', src, dsMap);
+            }
+
             // If we're at the end of the list, move to the new latest
-            if (appState.currentDateIndex === appState.availableDates.length - 1) {
+            if (wasAtEnd) {
               setAppState('currentDateIndex', newDateIndex.dates.length - 1);
             }
           }

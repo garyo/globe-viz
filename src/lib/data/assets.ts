@@ -9,9 +9,18 @@ export interface DatasetAssets {
   metadata: Metadata;
 }
 
-export interface SourceDateMeta {
-  dates: string[];   // Dated textures that exist for this source
+export interface DatasetDateMeta {
+  dates: string[];   // Dated textures that exist for this source × dataset
   latest: string | null;
+}
+
+export interface SourceDateMeta {
+  dates: string[];   // Union of dated textures across this source's datasets
+  latest: string | null;
+  // Per-dataset breakdown, when the index exposes it. Anomaly variants can lag
+  // (or pre-date-gap) their base variable, so `datasets.sst_anom.dates` is a
+  // subset of `dates`. Absent in older index.json files.
+  datasets?: { [datasetId: string]: DatasetDateMeta };
 }
 
 export interface DateIndex {
