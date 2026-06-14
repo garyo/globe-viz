@@ -9,6 +9,9 @@ import {
   anomalyOf,
   sourcesFor,
   allVariables,
+  selectableDates,
+  currentSelectableIndex,
+  setSelectableIndex,
 } from '../stores/appState';
 
 export const KeyboardControls = () => {
@@ -44,11 +47,11 @@ export const KeyboardControls = () => {
         case ' ': // Spacebar - play/pause animation
           if (!onGlobeTab) return;
           e.preventDefault();
-          if (appState.availableDates.length > 1) {
+          if (selectableDates().length > 1) {
             // If starting to play from the last frame, jump to beginning
             if (!appState.isAnimating &&
-                appState.currentDateIndex === appState.availableDates.length - 1) {
-              setAppState('currentDateIndex', 0);
+                currentSelectableIndex() === selectableDates().length - 1) {
+              setSelectableIndex(0);
             }
             setAppState('isAnimating', !appState.isAnimating);
           }
@@ -57,16 +60,16 @@ export const KeyboardControls = () => {
         case 'arrowleft': // Left arrow - previous date
           if (!onGlobeTab) return;
           e.preventDefault();
-          if (appState.currentDateIndex > 0) {
-            setAppState('currentDateIndex', appState.currentDateIndex - 1);
+          if (currentSelectableIndex() > 0) {
+            setSelectableIndex(currentSelectableIndex() - 1);
           }
           break;
 
         case 'arrowright': // Right arrow - next date
           if (!onGlobeTab) return;
           e.preventDefault();
-          if (appState.currentDateIndex < appState.availableDates.length - 1) {
-            setAppState('currentDateIndex', appState.currentDateIndex + 1);
+          if (currentSelectableIndex() < selectableDates().length - 1) {
+            setSelectableIndex(currentSelectableIndex() + 1);
           }
           break;
 

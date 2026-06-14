@@ -1,5 +1,13 @@
 import { Show, createSignal, onMount } from 'solid-js';
-import { appState, setAppState, saveState, hasMultipleDates } from '../stores/appState';
+import {
+  appState,
+  setAppState,
+  saveState,
+  hasMultipleDates,
+  selectableDates,
+  currentSelectableIndex,
+  setSelectableIndex,
+} from '../stores/appState';
 import { isMobile } from '../lib/helpers/responsiveness-client';
 import { Toggle } from './controls/Toggle';
 import { DateSlider } from './controls/DateSlider';
@@ -42,7 +50,8 @@ export const ControlPanel = () => {
   };
 
   const handleDateChange = (index: number) => {
-    setAppState('currentDateIndex', index);
+    // index is into selectableDates() (the slider's domain), not the union.
+    setSelectableIndex(index);
     // Don't save to localStorage - let user navigate freely during session
   };
 
@@ -55,8 +64,8 @@ export const ControlPanel = () => {
   const handleToggleAnimation = () => {
     // If starting to play from the last frame, jump to beginning immediately
     if (!appState.isAnimating &&
-        appState.currentDateIndex === appState.availableDates.length - 1) {
-      setAppState('currentDateIndex', 0);
+        currentSelectableIndex() === selectableDates().length - 1) {
+      setSelectableIndex(0);
     }
     setAppState('isAnimating', !appState.isAnimating);
   };
@@ -86,8 +95,8 @@ export const ControlPanel = () => {
 
         <div class="control-panel-body">
             <DateSlider
-              dates={appState.availableDates}
-              currentIndex={appState.currentDateIndex}
+              dates={selectableDates()}
+              currentIndex={currentSelectableIndex()}
               onDateChange={handleDateChange}
               onStopAnimation={handleStopAnimation}
               disabled={appState.isLoading}
@@ -142,8 +151,8 @@ export const ControlPanel = () => {
       </div>
 
       <QuickDateSlider
-        dates={appState.availableDates}
-        currentIndex={appState.currentDateIndex}
+        dates={selectableDates()}
+        currentIndex={currentSelectableIndex()}
         isAnimating={appState.isAnimating}
         onDateChange={handleDateChange}
         onToggleAnimation={handleToggleAnimation}

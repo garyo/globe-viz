@@ -6,6 +6,9 @@ import {
   DATASETS_BY_SOURCE,
   isValidDataset,
   defaultDatasetFor,
+  selectableDates,
+  currentSelectableIndex,
+  setSelectableIndex,
   type SourceId,
   type DatasetId,
 } from '../stores/appState';
@@ -84,16 +87,26 @@ export const AppLoader: Component = () => {
       // source lags behind OISST (ERA5's ~5-day reanalysis latency).
       const urlDate = consumePendingDateFromUrl();
       const sourceMeta = dateIndex.sources?.[appState.source];
-      // Prefer the active dataset's latest (anomaly variants can lag the base
-      // variable), then the source's latest, then the union latest — so we
-      // don't pick a date the chosen dataset has no texture for and trigger
-      // the oisst fallback below.
       const datasetMeta = sourceMeta?.datasets?.[appState.dataset];
-      const initialDate: string =
+      // Dates the active dataset actually has a texture for.
+      const datasetDatesList = datasetMeta?.dates ?? sourceMeta?.dates ?? dateIndex.dates;
+      // A ?date= in the URL wins (shared links lock the view); otherwise the
+      // dataset's latest, then source latest, then union latest.
+      const wantedDate: string =
         (urlDate && dateIndex.dates.includes(urlDate) ? urlDate : undefined)
         ?? datasetMeta?.latest
         ?? sourceMeta?.latest
         ?? dateIndex.latest;
+      // Clamp to a date the dataset covers (anomaly variants lag the base
+      // variable / union): exact, else nearest earlier, else its latest — so
+      // a link to a date past the dataset's range doesn't 403 into the oisst
+      // fallback below.
+      const initialDate: string =
+        datasetDatesList.includes(wantedDate)
+          ? wantedDate
+          : [...datasetDatesList].reverse().find((d) => d <= wantedDate)
+            ?? datasetDatesList[datasetDatesList.length - 1]
+            ?? wantedDate;
       const initialIndex = dateIndex.dates.indexOf(initialDate);
       setAppState(
         'currentDateIndex',
@@ -159,7 +172,9 @@ export const AppLoader: Component = () => {
           // Only update if we have new dates
           if (newDateIndex.dates.length > appState.availableDates.length) {
             console.log(`Found ${newDateIndex.dates.length - appState.availableDates.length} new date(s)`);
-            const wasAtEnd = appState.currentDateIndex === appState.availableDates.length - 1;
+            // Was the user parked on the current dataset's latest frame?
+            // (Computed against the pre-update date sets.)
+            const wasAtEnd = currentSelectableIndex() === selectableDates().length - 1;
             setAppState('availableDates', newDateIndex.dates);
 
             // Refresh per-source/dataset sets so date-snapping reflects newly
@@ -176,9 +191,9 @@ export const AppLoader: Component = () => {
               setAppState('datasetDates', src, dsMap);
             }
 
-            // If we're at the end of the list, move to the new latest
+            // If parked on the latest frame, follow the dataset's new latest.
             if (wasAtEnd) {
-              setAppState('currentDateIndex', newDateIndex.dates.length - 1);
+              setSelectableIndex(selectableDates().length - 1);
             }
           }
         } catch (err) {

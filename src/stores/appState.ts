@@ -420,7 +420,42 @@ export function getCurrentDate(): string | undefined {
 
 // Helper to check if we have multiple dates available
 export function hasMultipleDates(): boolean {
-  return appState.availableDates.length > 1;
+  return selectableDates().length > 1;
+}
+
+/** Dates the date slider, arrow keys, and animation iterate for the current
+ * (source, dataset). A subset of availableDates: the same calendar day can
+ * have a base-variable texture but not its anomaly, and a dataset's latest can
+ * lag the union latest, so navigation is scoped to what actually has a texture
+ * — otherwise scrubbing/playing onto a missing date 403s and stalls. */
+export function selectableDates(): string[] {
+  return datesForSelection(appState.source, appState.dataset);
+}
+
+/** Position of the current date within selectableDates(). If the current date
+ * isn't in the set (transient, before a snap), returns the nearest earlier
+ * date's index, else the last. */
+export function currentSelectableIndex(): number {
+  const dates = selectableDates();
+  if (dates.length === 0) return 0;
+  const cur = getCurrentDate();
+  if (!cur) return dates.length - 1;
+  const i = dates.indexOf(cur);
+  if (i >= 0) return i;
+  for (let k = dates.length - 1; k >= 0; k--) {
+    if (dates[k] <= cur) return k;
+  }
+  return 0;
+}
+
+/** Move the current date to selectableDates()[i] (clamped), translating to the
+ * union index (currentDateIndex) the rest of the app navigates by. */
+export function setSelectableIndex(i: number): void {
+  const dates = selectableDates();
+  if (dates.length === 0) return;
+  const date = dates[Math.max(0, Math.min(i, dates.length - 1))];
+  const idx = appState.availableDates.indexOf(date);
+  if (idx >= 0) setAppState('currentDateIndex', idx);
 }
 
 /**

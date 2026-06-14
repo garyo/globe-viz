@@ -1,5 +1,11 @@
 import { onMount, onCleanup, createEffect, Show } from 'solid-js';
-import { appState, setAppState } from '../stores/appState';
+import {
+  appState,
+  setAppState,
+  selectableDates,
+  currentSelectableIndex,
+  setSelectableIndex,
+} from '../stores/appState';
 import { toggleFullScreen } from '../lib/helpers/fullscreen';
 import { createResizeHandler } from '../lib/helpers/responsiveness-client';
 import {
@@ -216,19 +222,18 @@ export const GlobeScene = () => {
         }
         setAppState('missingDateError', null);
 
-        // If animating, schedule next frame after this texture loads.
-        if (isAnimating && availableDates.length > 1) {
-          const nextIndex = (currentDateIndex + 1) % availableDates.length;
-          const nextDate = availableDates[nextIndex];
+        // If animating, schedule next frame after this texture loads. Iterate
+        // the current dataset's dates (not the union) so playback ends at the
+        // dataset's real latest and skips days it has no texture for.
+        const selDates = selectableDates();
+        if (isAnimating && selDates.length > 1) {
+          const selIdx = currentSelectableIndex();
+          const nextSelIdx = (selIdx + 1) % selDates.length;
+          const nextDate = selDates[nextSelIdx];
 
-          const advanceFrame = () => {
-            setAppState('currentDateIndex', (prev) => {
-              const next = prev + 1;
-              return next >= availableDates.length ? 0 : next;
-            });
-          };
+          const advanceFrame = () => setSelectableIndex(nextSelIdx);
 
-          const isAtEnd = currentDateIndex === availableDates.length - 1;
+          const isAtEnd = selIdx === selDates.length - 1;
           const baseDelay = isAtEnd ? animationSpeed + 1000 : animationSpeed;
 
           if (textureCache.has(nextDate, source, dataset)) {
@@ -271,15 +276,14 @@ export const GlobeScene = () => {
   // Pre-load the next date's (source, dataset) tuple while animating.
   createEffect(() => {
     const isAnimating = appState.isAnimating;
-    const currentDateIndex = appState.currentDateIndex;
-    const availableDates = appState.availableDates;
     const source = appState.source;
     const dataset = appState.dataset;
+    const selDates = selectableDates();
 
-    if (!isAnimating || availableDates.length <= 1 || !textureLoader || !renderer) return;
+    if (!isAnimating || selDates.length <= 1 || !textureLoader || !renderer) return;
 
-    const nextIndex = (currentDateIndex + 1) % availableDates.length;
-    const nextDate = availableDates[nextIndex];
+    const nextIndex = (currentSelectableIndex() + 1) % selDates.length;
+    const nextDate = selDates[nextIndex];
     if (!nextDate) return;
 
     if (!textureCache.has(nextDate, source, dataset)) {
