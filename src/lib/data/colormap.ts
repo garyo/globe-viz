@@ -19,11 +19,15 @@ const DATASET_TITLES: Record<DatasetId, string> = {
   t2m_anom: '2 m Air Temp Anomaly, °C',
 };
 
-// Cells (tick positions) per dataset. SST gets denser ticks around the upper
-// range where the most ENSO-relevant variation lives; the others use their
-// cmap-defined break points directly.
+// Cells (tick positions) per dataset. Each cmap break point would otherwise
+// become its own ~30px swatch, and the #colormap SVG caps at 380px — so
+// datasets with many break points need a curated, narrower tick set. SST gets
+// denser ticks around the upper ENSO-relevant range; t2m_anom's 15-stop cmap
+// is sampled down to the populated ±4 °C band plus a couple of tail markers.
+// Datasets not listed use their cmap break points directly.
 const DATASET_CELLS: Partial<Record<DatasetId, number[]>> = {
   sst: [0, 10, 20, 22, 23, 24, 25, 30, 32, 33, 35],
+  t2m_anom: [-10, -3, -1, 0, 1, 2, 3, 4, 9, 16],
 };
 
 const DATASET_FORMATS: Record<DatasetId, string> = {
@@ -31,7 +35,7 @@ const DATASET_FORMATS: Record<DatasetId, string> = {
   anom: '.1f',
   sst_anom: '.1f',
   t2m: '.0f',
-  t2m_anom: '.1f',
+  t2m_anom: '.0f',
 };
 
 /**
