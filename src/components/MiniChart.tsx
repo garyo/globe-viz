@@ -52,6 +52,7 @@ export const MiniChart = (props: MiniChartProps) => {
     let yMax = -Infinity;
     for (const s of years) {
       for (const [, v] of s.data) {
+        if (v === null) continue; // gap-break marker
         if (v < yMin) yMin = v;
         if (v > yMax) yMax = v;
       }
@@ -79,9 +80,19 @@ export const MiniChart = (props: MiniChartProps) => {
       ctx.strokeStyle = color;
       ctx.lineWidth = lineWidth;
       ctx.beginPath();
-      ctx.moveTo(xToPx(s.data[0][0]), yToPx(s.data[0][1]));
-      for (let i = 1; i < s.data.length; i++) {
-        ctx.lineTo(xToPx(s.data[i][0]), yToPx(s.data[i][1]));
+      // null values are gap-break markers: lift the pen so a missing stretch
+      // isn't drawn as a straight line across the gap.
+      let penDown = false;
+      for (const [doy, v] of s.data) {
+        if (v === null) {
+          penDown = false;
+          continue;
+        }
+        const px = xToPx(doy);
+        const py = yToPx(v);
+        if (penDown) ctx.lineTo(px, py);
+        else ctx.moveTo(px, py);
+        penDown = true;
       }
       ctx.stroke();
     };

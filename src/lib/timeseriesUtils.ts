@@ -9,7 +9,10 @@ export interface DatasetSeries {
 
 export interface YearSeries {
   year: number;
-  data: [number, number][]; // [day-of-year (leap-aligned), value]
+  // [day-of-year (leap-aligned), value]. A `null` value is a deliberate break
+  // marker inserted where consecutive days are missing, so a data gap renders
+  // as a break rather than a straight line interpolated across it.
+  data: [number, number | null][];
 }
 
 export interface ThemeColors {
@@ -93,10 +96,22 @@ export function readThemeColors(): ThemeColors {
   };
 }
 
+// Whole calendar days between two 'YYYY-MM-DD' strings (b - a).
+function calendarDaysBetween(a: string, b: string): number {
+  const [ay, am, ad] = a.split('-').map(Number);
+  const [by, bm, bd] = b.split('-').map(Number);
+  return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86400000);
+}
+
 // Group a (dates, values) series into per-year arrays of [day-of-year, value]
-// points, sorted oldest year first.
+// points, sorted oldest year first. Where consecutive days are missing — a
+// dropped/unavailable date, or a NaN value filtered out below — a [doy, null]
+// break is inserted so the renderer shows a gap instead of interpolating a
+// straight line across it. Gap detection uses real calendar dates, not the
+// day-of-year delta, so the legitimate non-leap-year Feb 28 → Mar 1 jump
+// (leap-aligned doy 58 → 60) is not mistaken for a gap.
 export function groupByYear(series: DatasetSeries): YearSeries[] {
-  const byYear = new Map<number, [number, number][]>();
+  const byYear = new Map<number, { doy: number; value: number; date: string }[]>();
   for (let i = 0; i < series.dates.length; i++) {
     const date = series.dates[i];
     const value = series.values[i];
@@ -104,10 +119,20 @@ export function groupByYear(series: DatasetSeries): YearSeries[] {
     const year = Number(date.slice(0, 4));
     const doy = leapAlignedDayOfYear(date);
     const arr = byYear.get(year) ?? [];
-    arr.push([doy, value]);
+    arr.push({ doy, value, date });
     byYear.set(year, arr);
   }
   return [...byYear.entries()]
     .sort(([a], [b]) => a - b)
-    .map(([year, data]) => ({ year, data: data.sort((p, q) => p[0] - q[0]) }));
+    .map(([year, pts]) => {
+      pts.sort((p, q) => p.doy - q.doy);
+      const data: [number, number | null][] = [];
+      for (let i = 0; i < pts.length; i++) {
+        if (i > 0 && calendarDaysBetween(pts[i - 1].date, pts[i].date) > 1) {
+          data.push([pts[i - 1].doy + 1, null]);
+        }
+        data.push([pts[i].doy, pts[i].value]);
+      }
+      return { year, data };
+    });
 }

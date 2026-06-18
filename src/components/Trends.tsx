@@ -94,6 +94,7 @@ function findRecord(yearsSeries: YearSeries[]): { year: number; doy: number; val
   let best: { year: number; doy: number; value: number } | null = null;
   for (const s of yearsSeries) {
     for (const [doy, v] of s.data) {
+      if (v === null) continue; // gap-break marker
       if (best === null || v > best.value) best = { year: s.year, doy, value: v };
     }
   }
@@ -241,8 +242,11 @@ function buildOption(
     }
 
     const latestPoints = years[years.length - 1].data;
-    if (latestPoints.length > 0) {
-      const [doy, val] = latestPoints[latestPoints.length - 1];
+    const lastReal = [...latestPoints].reverse().find((p) => p[1] !== null) as
+      | [number, number]
+      | undefined;
+    if (lastReal) {
+      const [doy, val] = lastReal;
       markData.push({
         coord: [doy, val],
         label: {
