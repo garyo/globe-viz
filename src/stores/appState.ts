@@ -308,7 +308,7 @@ const initialState: AppState = {
   missingDateError: null,
   notice: null,
   mobileMenuOpen: false,
-  datasetsPanelOpen: false,
+  datasetsPanelOpen: true,
 };
 
 /**
