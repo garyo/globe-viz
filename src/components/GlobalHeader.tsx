@@ -3,17 +3,11 @@ import {
   appState,
   setAppState,
   saveState,
-  applyView,
-  selectVariable,
   variableOf,
   anomalyOf,
-  sourcesFor,
-  allVariables,
-  hasAnomalyFor,
+  effectiveStatistic,
   SOURCE_LABELS,
   type TabId,
-  type SourceId,
-  type Variable,
 } from '../stores/appState';
 import { ThemeSwitcher } from './controls/ThemeSwitcher';
 
@@ -23,14 +17,11 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'about', label: 'About' },
 ];
 
-// Variable buttons. Every variable is always visible; picking one hops to a
-// source that offers it (Air Temp implies ERA5), so the control never
-// appears/disappears as the source changes.
-const VARIABLE_LABELS: Record<Variable, { icon: string; short: string; long: string }> = {
-  sst: { icon: '🌡', short: 'Sea Temp', long: 'Sea-surface temperature' },
-  t2m: { icon: '🌬', short: 'Air Temp', long: '2 m air temperature' },
-};
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
+// Data selection (source / variable / statistic / anomaly) lives entirely in
+// the floating "Datasets" panel (AvailabilityFab) now — the header is just
+// brand, tabs, theme, and a read-only current-view chip that opens that panel.
 export const GlobalHeader = () => {
   const switchTab = (id: TabId) => {
     if (appState.activeTab === id) return;
@@ -38,20 +29,16 @@ export const GlobalHeader = () => {
     saveState();
   };
 
-  // The user-facing knobs, in priority order: variable, actual-vs-anomaly,
-  // then source (a provenance detail, demoted to a small picker). All
-  // selection logic lives in appState (applyView / selectVariable) so the
-  // keyboard shortcuts share it.
-  const currentVariable = (): Variable => variableOf(appState.dataset);
-  const currentAnomaly = (): boolean => anomalyOf(appState.dataset);
-
-  const setAnomaly = (anomaly: boolean) =>
-    applyView(appState.source, currentVariable(), anomaly);
-  const selectSource = (s: SourceId) =>
-    applyView(s, currentVariable(), currentAnomaly());
-
-  const sourceChoices = () => sourcesFor(currentVariable());
-  const anomalyAvailable = () => hasAnomalyFor(appState.source, currentVariable());
+  // Compact "what am I viewing" summary, e.g. "GFS · Air Temp · Max · Δ".
+  const viewLabel = (): string => {
+    const src = SOURCE_LABELS[appState.source].short;
+    const v = variableOf(appState.dataset);
+    const parts = [src, v === 't2m' ? 'Air Temp' : 'Sea Temp'];
+    const stat = effectiveStatistic(appState.source, appState.dataset);
+    if (stat) parts.push(cap(stat));
+    if (anomalyOf(appState.dataset)) parts.push('Δ');
+    return parts.join(' · ');
+  };
 
   return (
     <header class="global-header">
@@ -75,73 +62,21 @@ export const GlobalHeader = () => {
       </nav>
 
       <div class="global-controls">
-        <Show when={allVariables().length > 1}>
-          <div class="segmented" role="radiogroup" aria-label="Variable">
-            <For each={allVariables()}>
-              {(v) => (
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={currentVariable() === v}
-                  aria-label={VARIABLE_LABELS[v].long}
-                  classList={{ active: currentVariable() === v }}
-                  onClick={() => selectVariable(v)}
-                  title={VARIABLE_LABELS[v].long}
-                >
-                  <span class="icon">{VARIABLE_LABELS[v].icon}</span>
-                  <span class="label-mobile-hide">{VARIABLE_LABELS[v].short}</span>
-                </button>
-              )}
-            </For>
-          </div>
+        {/* Read-out of the current view; click to open the Datasets panel. */}
+        <Show when={appState.activeTab !== 'about'}>
+          <button
+            type="button"
+            class="view-chip"
+            classList={{ active: appState.datasetsPanelOpen }}
+            aria-haspopup="dialog"
+            aria-expanded={appState.datasetsPanelOpen}
+            onClick={() => setAppState('datasetsPanelOpen', !appState.datasetsPanelOpen)}
+            title="Change dataset"
+          >
+            <span class="view-chip-icon" aria-hidden="true">▦</span>
+            <span class="view-chip-label">{viewLabel()}</span>
+          </button>
         </Show>
-
-        <div class="segmented" role="radiogroup" aria-label="Mode">
-          <button
-            type="button"
-            role="radio"
-            aria-checked={!currentAnomaly()}
-            classList={{ active: !currentAnomaly() }}
-            onClick={() => setAnomaly(false)}
-            title="Absolute temperature"
-          >
-            Actual
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={currentAnomaly()}
-            classList={{ active: currentAnomaly() }}
-            disabled={!anomalyAvailable()}
-            onClick={() => setAnomaly(true)}
-            title={
-              anomalyAvailable()
-                ? 'Difference vs. 1971–2000 climatology'
-                : 'Anomaly not yet available for this variable'
-            }
-          >
-            Δ Anomaly
-          </button>
-        </div>
-
-        {/* Every source stays in the list (sized by the longest option, so
-            the header never reflows on variable switch); ones that don't
-            offer the current variable are disabled rather than removed. */}
-        <select
-          class="source-select"
-          aria-label="Data source"
-          title={SOURCE_LABELS[appState.source].full}
-          value={appState.source}
-          onChange={(e) => selectSource(e.currentTarget.value as SourceId)}
-        >
-          <For each={appState.availableSources}>
-            {(s) => (
-              <option value={s} disabled={!sourceChoices().includes(s)}>
-                {SOURCE_LABELS[s].short}
-              </option>
-            )}
-          </For>
-        </select>
 
         <ThemeSwitcher />
       </div>

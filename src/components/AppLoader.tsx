@@ -18,7 +18,7 @@ import { writeUrlState } from '../lib/url-state';
 import { AppTabs } from './AppTabs';
 import { KeyboardControls } from './KeyboardControls';
 
-const KNOWN_SOURCES: SourceId[] = ['oisst', 'era5'];
+const KNOWN_SOURCES: SourceId[] = ['oisst', 'era5', 'gfs'];
 
 export const AppLoader: Component = () => {
   const [isLoading, setIsLoading] = createSignal(true);

@@ -284,24 +284,292 @@ html {
     display: inline;
 }
 
-/* Source picker — deliberately quieter than the variable/mode segmented
-   controls: data provenance is a detail, not a primary choice. Collapses to
-   a static label when the current variable has only one source. */
-.source-select {
+/* Current-view chip in the header — a read-out of the active dataset that
+   opens the Datasets panel on click. */
+.view-chip {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    max-width: 16rem;
     background: var(--button-bg);
-    color: var(--text-secondary);
+    color: var(--text-primary);
     border: 1px solid var(--border);
     border-radius: 6px;
-    padding: 0.3rem 0.4rem;
-    font-size: 0.75rem;
+    padding: 0.34rem 0.6rem;
+    font-size: 0.8rem;
     font-family: inherit;
+    line-height: 1;
     cursor: pointer;
-    transition: background 0.15s, color 0.15s;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
-.source-select:hover {
-    color: var(--text-primary);
+.view-chip:hover {
     background: var(--button-bg-hover);
+}
+
+.view-chip.active {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+.view-chip-icon {
+    font-size: 0.9rem;
+    line-height: 1;
+    color: var(--accent);
+}
+
+.view-chip-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Floating "Availability" action button — bottom-right, above the quick date
+   slider. Toggles the availability matrix as a slide-out panel. The text label
+   collapses to icon-only on phones (.label-mobile-hide). */
+.availability-fab {
+    position: fixed;
+    right: 0.75rem;
+    bottom: 4rem;
+    z-index: 19;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 0.7rem;
+    background: color-mix(in srgb, var(--bg-panel) 80%, transparent);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    box-shadow: var(--shadow);
+    font-size: 0.8rem;
+    font-family: inherit;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.availability-fab:hover {
+    color: var(--text-primary);
+}
+
+.availability-fab.active {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+.availability-fab .fab-icon {
+    font-size: 0.95rem;
+    line-height: 1;
+}
+
+/* Availability matrix — translucent slide-out anchored above the FAB, showing
+   which sources offer which data (rows × Sea/Air·Mean/Max/Min). Kept very
+   see-through so it doesn't obscure the globe; animates up from the button. */
+.availability-panel {
+    position: fixed;
+    right: 0.75rem;
+    bottom: 6.6rem;
+    z-index: 20;
+    width: max-content;
+    max-width: min(18rem, calc(100vw - 1.5rem));
+    padding: 0.5rem 0.6rem;
+    background: color-mix(in srgb, var(--bg-panel) 60%, transparent);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    color: var(--text-primary);
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+    transform-origin: bottom right;
+    pointer-events: none;
+    transition: opacity 0.16s ease-out, transform 0.16s ease-out;
+}
+
+.availability-panel.open {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+}
+
+.availability-panel .cap-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    font-size: 0.76rem;
+    font-weight: 600;
+    margin-bottom: 0.3rem;
+}
+
+.availability-panel .cap-close {
+    appearance: none;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 0.2rem;
+}
+
+.availability-panel .cap-close:hover {
+    color: var(--text-primary);
+}
+
+/* Phones: span with small side margins and clear the taller bottom chrome. */
+@media screen and (max-width: 768px) {
+    .availability-fab {
+        bottom: 4.5rem;
+        padding: 0.5rem 0.6rem;
+    }
+
+    .availability-panel {
+        right: 0.5rem;
+        left: 0.5rem;
+        bottom: 7rem;
+        min-width: 0;
+        max-width: none;
+    }
+}
+
+.cap-table {
+    border-collapse: collapse;
+    font-size: 0.74rem;
+}
+
+.cap-table th,
+.cap-table td {
+    padding: 0.08rem 0.3rem;
+    text-align: center;
+}
+
+.cap-table .cap-var,
+.cap-table .cap-stat {
+    color: var(--text-secondary);
+    font-weight: 500;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.15rem;
+}
+
+.cap-table .cap-src {
+    position: relative;
+    text-align: left;
+    padding-right: 0.6rem;
+}
+
+/* Source name — click to pop a little provenance/latency explainer (the help
+   cursor invites it, and hover tooltips don't work on touch). */
+.cap-src-btn {
+    appearance: none;
+    background: transparent;
+    border: none;
+    padding: 0;
+    font: inherit;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    cursor: help;
+}
+
+.cap-src-btn:hover {
+    color: var(--accent);
+}
+
+.cap-src-pop {
+    position: absolute;
+    left: 0;
+    top: 100%;
+    z-index: 1;
+    margin-top: 2px;
+    width: max-content;
+    max-width: 12rem;
+    padding: 0.3rem 0.5rem;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: var(--shadow);
+    font-size: 0.68rem;
+    font-weight: 400;
+    white-space: normal;
+    color: var(--text-secondary);
+}
+
+/* Availability cell — a small filled disc for "available" (clickable), or a
+   dim dot (.cap-x) for "not offered". The current selection gets a ring. */
+.cap-dot {
+    appearance: none;
+    display: block;
+    margin: 0 auto;
+    width: 0.6rem;
+    height: 0.6rem;
+    padding: 0;
+    border: 2px solid transparent;
+    border-radius: 50%;
+    background: var(--accent);
+    background-clip: padding-box;
+    cursor: pointer;
+    transition: transform 0.1s, box-shadow 0.15s;
+}
+
+.cap-dot:hover {
+    transform: scale(1.25);
+}
+
+.cap-dot.current {
+    box-shadow: 0 0 0 2px var(--bg-panel), 0 0 0 3px var(--accent);
+}
+
+.cap-x {
+    display: block;
+    color: var(--text-secondary);
+    opacity: 0.35;
+    cursor: default;
+    line-height: 0.6rem;
+}
+
+/* Anomaly toggle — a checkbox inside the panel; greyed when the current
+   selection has no anomaly product. */
+.cap-anom {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+    padding-top: 0.45rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.74rem;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.cap-anom input {
+    margin: 0;
+    cursor: pointer;
+}
+
+.cap-anom.disabled {
+    color: var(--text-secondary);
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.cap-anom.disabled input {
+    cursor: not-allowed;
+}
+
+.cap-foot {
+    margin: 0.45rem 0 0;
+    font-size: 0.66rem;
+    color: var(--text-secondary);
+}
+
+.cap-foot-warn {
+    color: var(--accent);
+    opacity: 0.95;
 }
 
 /* Transient toast under the header (e.g. date snapped on source switch). */

@@ -4,6 +4,7 @@ import { GlobeScene } from './GlobeScene';
 import { GlobalHeader } from './GlobalHeader';
 import { TopBar } from './TopBar';
 import { ControlPanel } from './ControlPanel';
+import { AvailabilityFab } from './AvailabilityFab';
 import { About } from './About';
 
 // Lazy-load Trends so ECharts (~800KB pre-gzip) only ships when the user
@@ -45,6 +46,9 @@ export const AppTabs = () => {
         <Show when={appState.activeTab === 'about'}>
           <About />
         </Show>
+
+        {/* Floating availability matrix — self-guards to Globe/Trends. */}
+        <AvailabilityFab />
       </div>
     </>
   );

@@ -19,8 +19,12 @@
 import type { AppState, DatasetId, SourceId, TabId } from '../stores/appState';
 
 const VALID_TAB: TabId[] = ['globe', 'trends', 'about'];
-const VALID_SRC: SourceId[] = ['oisst', 'era5'];
-const VALID_DS: DatasetId[] = ['sst', 'anom', 'sst_anom', 't2m', 't2m_anom'];
+const VALID_SRC: SourceId[] = ['oisst', 'era5', 'gfs'];
+const VALID_DS: DatasetId[] = [
+  'sst', 'anom', 'sst_anom', 't2m', 't2m_anom',
+  't2m_mean', 't2m_max', 't2m_min',
+  't2m_mean_anom', 't2m_max_anom', 't2m_min_anom',
+];
 const VALID_MODE = ['single', 'grid'] as const;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 

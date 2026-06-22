@@ -54,6 +54,7 @@ echarts.use([
 const SOURCE_LABELS: Record<SourceId, string> = {
   oisst: 'NOAA OISST',
   era5: 'ECMWF ERA5',
+  gfs: 'NOAA GFS',
 };
 
 const DATASET_AXIS_LABELS: Record<DatasetId, string> = {
@@ -62,6 +63,12 @@ const DATASET_AXIS_LABELS: Record<DatasetId, string> = {
   sst_anom: 'SST Anomaly vs. 1971–2000 mean (°C)',
   t2m: '2 m Air Temp (°C)',
   t2m_anom: '2 m Air Temp Anomaly vs. 1971–2000 mean (°C)',
+  t2m_mean: 'Daily Mean 2 m Air Temp (°C)',
+  t2m_max: 'Daily Max 2 m Air Temp (°C)',
+  t2m_min: 'Daily Min 2 m Air Temp (°C)',
+  t2m_mean_anom: 'Daily Mean 2 m Air Temp Anomaly vs. 1971–2000 mean (°C)',
+  t2m_max_anom: 'Daily Max 2 m Air Temp Anomaly vs. 1971–2000 mean (°C)',
+  t2m_min_anom: 'Daily Min 2 m Air Temp Anomaly vs. 1971–2000 mean (°C)',
 };
 
 const DATASET_TITLE_FRAGMENT: Record<DatasetId, string> = {
@@ -70,6 +77,12 @@ const DATASET_TITLE_FRAGMENT: Record<DatasetId, string> = {
   sst_anom: 'SST Anomaly vs. 1971–2000 mean',
   t2m: '2 m Air Temperature',
   t2m_anom: '2 m Air Temp Anomaly vs. 1971–2000 mean',
+  t2m_mean: 'Daily Mean 2 m Air Temperature',
+  t2m_max: 'Daily Max 2 m Air Temperature',
+  t2m_min: 'Daily Min 2 m Air Temperature',
+  t2m_mean_anom: 'Daily Mean 2 m Air Temp Anomaly vs. 1971–2000 mean',
+  t2m_max_anom: 'Daily Max 2 m Air Temp Anomaly vs. 1971–2000 mean',
+  t2m_min_anom: 'Daily Min 2 m Air Temp Anomaly vs. 1971–2000 mean',
 };
 
 // Phone-width titles: the full fragment + year range doesn't fit.
@@ -79,6 +92,12 @@ const DATASET_TITLE_SHORT: Record<DatasetId, string> = {
   sst_anom: 'SST Anomaly',
   t2m: 'Air Temp',
   t2m_anom: 'Air Temp Anomaly',
+  t2m_mean: 'Mean Air Temp',
+  t2m_max: 'Max Air Temp',
+  t2m_min: 'Min Air Temp',
+  t2m_mean_anom: 'Mean Air Temp Anomaly',
+  t2m_max_anom: 'Max Air Temp Anomaly',
+  t2m_min_anom: 'Min Air Temp Anomaly',
 };
 
 /** Layout regime for the single chart, derived from the container size.

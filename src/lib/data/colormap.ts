@@ -17,6 +17,12 @@ const DATASET_TITLES: Record<DatasetId, string> = {
   sst_anom: 'SST Anomaly, °C',
   t2m: '2 m Air Temperature, °C',
   t2m_anom: '2 m Air Temp Anomaly, °C',
+  t2m_mean: 'Daily Mean 2 m Air Temp, °C',
+  t2m_max: 'Daily Max 2 m Air Temp, °C',
+  t2m_min: 'Daily Min 2 m Air Temp, °C',
+  t2m_mean_anom: 'Daily Mean 2 m Air Temp Anomaly, °C',
+  t2m_max_anom: 'Daily Max 2 m Air Temp Anomaly, °C',
+  t2m_min_anom: 'Daily Min 2 m Air Temp Anomaly, °C',
 };
 
 // Cells (tick positions) per dataset. Each cmap break point would otherwise
@@ -27,7 +33,11 @@ const DATASET_TITLES: Record<DatasetId, string> = {
 // Datasets not listed use their cmap break points directly.
 const DATASET_CELLS: Partial<Record<DatasetId, number[]>> = {
   sst: [0, 10, 20, 22, 23, 24, 25, 30, 32, 33, 35],
+  // GFS anomaly maps reuse ERA5's 15-stop t2m_anom cmap, so share its ticks.
   t2m_anom: [-10, -3, -1, 0, 1, 2, 3, 4, 9, 16],
+  t2m_mean_anom: [-10, -3, -1, 0, 1, 2, 3, 4, 9, 16],
+  t2m_max_anom: [-10, -3, -1, 0, 1, 2, 3, 4, 9, 16],
+  t2m_min_anom: [-10, -3, -1, 0, 1, 2, 3, 4, 9, 16],
 };
 
 const DATASET_FORMATS: Record<DatasetId, string> = {
@@ -36,6 +46,12 @@ const DATASET_FORMATS: Record<DatasetId, string> = {
   sst_anom: '.1f',
   t2m: '.0f',
   t2m_anom: '.0f',
+  t2m_mean: '.0f',
+  t2m_max: '.0f',
+  t2m_min: '.0f',
+  t2m_mean_anom: '.0f',
+  t2m_max_anom: '.0f',
+  t2m_min_anom: '.0f',
 };
 
 /**

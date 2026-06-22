@@ -11,6 +11,8 @@ Astro + Solid.js + Three.js + ECharts SPA at https://globe-viz.oberbrunner.com �
 
 The shared expansion plan lives at `/Users/garyo/.claude/plans/tranquil-imagining-seal.md` (multi-source: ERA5 + MODIS LST; regional selectors including Niño 3.4).
 
+**Globe textures start 2024-01-01; graphs go back further.** Map textures are only published from 2024-01-01 on (kept small for the browser), but time-series graphs cover the full archive (ERA5 to 1982, GFS to 2021-03-23). This asymmetry is intentional — don't assume a graph's date range implies a texture exists for that date, or try to "fix" the gap. Enforced pipeline-side; see `sea-surface-temp-viz/CLAUDE.md`.
+
 ## Deploy
 
 Cloudflare Pages auto-deploys on push to `main`. CNAME → `globe-viz.pages.dev`. Build settings live in the **CF dashboard, not the repo**:

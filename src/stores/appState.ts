@@ -18,22 +18,92 @@ export type ThemePref = 'light' | 'dark' | 'system';
 export type EffectiveTheme = 'light' | 'dark';
 
 // Climate-data sources defined upstream in sea-surface-temp-viz/sources/.
-export type SourceId = 'oisst' | 'era5';
+export type SourceId = 'oisst' | 'era5' | 'gfs';
 
 export const SOURCE_LABELS: Record<SourceId, { short: string; full: string }> = {
   oisst: { short: 'OISST', full: 'NOAA OISST' },
   era5: { short: 'ERA5', full: 'ECMWF ERA5' },
+  gfs: { short: 'GFS', full: 'NOAA GFS (near-real-time)' },
 };
 // Raw dataset IDs as they appear in cache keys + S3 filenames + timeseries
-// JSONs. OISST: sst, anom. ERA5: sst, sst_anom, t2m. The available dataset
-// list is source-specific — see DATASETS_BY_SOURCE.
-export type DatasetId = 'sst' | 'anom' | 'sst_anom' | 't2m' | 't2m_anom';
+// JSONs. OISST: sst, anom. ERA5: sst, sst_anom, t2m, t2m_anom. GFS carries 2 m
+// air temp along a min/mean/max statistic axis (t2m_{mean,max,min}[_anom]). The
+// available dataset list is source-specific — see DATASETS_BY_SOURCE.
+export type DatasetId =
+  | 'sst'
+  | 'anom'
+  | 'sst_anom'
+  | 't2m'
+  | 't2m_anom'
+  | 't2m_mean'
+  | 't2m_max'
+  | 't2m_min'
+  | 't2m_mean_anom'
+  | 't2m_max_anom'
+  | 't2m_min_anom';
 
-/** Per-source list of datasets, mirroring upstream sources/{oisst,era5}.py. */
+/** Per-source list of datasets, mirroring upstream sources/{oisst,era5,gfs}.py. */
 export const DATASETS_BY_SOURCE: Record<SourceId, DatasetId[]> = {
   oisst: ['sst', 'anom'],
   era5: ['sst', 'sst_anom', 't2m', 't2m_anom'],
+  gfs: [
+    't2m_mean', 't2m_max', 't2m_min',
+    't2m_mean_anom', 't2m_max_anom', 't2m_min_anom',
+  ],
 };
+
+// GFS exposes a daily reduction (statistic) axis that the other sources lack:
+// the same air-temp field as a daily mean, max, or min. It's a third orthogonal
+// decomposition of the DatasetId — like `anomaly` — so the data flow (cache
+// keys, filenames, timeseries) is unchanged; only the header gains a button
+// group. Sources without the axis return [] and the group stays hidden.
+export type StatisticId = 'mean' | 'max' | 'min';
+
+// Display order for the statistic axis: cold → hot (Min, Mean, Max).
+export const STATISTIC_ORDER: StatisticId[] = ['min', 'mean', 'max'];
+
+// The statistic axis only exists for air temp, and is ragged across sources:
+// ERA5 provides a daily mean only; GFS provides the full min/mean/max; sea-
+// surface temp has no statistic axis anywhere. This (with DATASETS_BY_SOURCE)
+// is the single source of truth for the capability grid the legend renders.
+export function statisticsForSourceVariable(source: SourceId, variable: Variable): StatisticId[] {
+  if (variable !== 't2m') return [];
+  if (source === 'gfs') return ['mean', 'max', 'min'];
+  if (source === 'era5') return ['mean'];
+  return [];
+}
+
+/** Statistics offered for a variable by ANY available source — the buttons to
+ * show (air temp → mean/max/min; sea temp → none). */
+export function statisticsForVariable(variable: Variable): StatisticId[] {
+  return STATISTIC_ORDER.filter((stat) =>
+    appState.availableSources.some((s) =>
+      statisticsForSourceVariable(s, variable).includes(stat),
+    ),
+  );
+}
+
+/** The statistic encoded in a dataset id, or null for sources without the axis. */
+export function statisticOf(d: DatasetId): StatisticId | null {
+  if (d.startsWith('t2m_mean')) return 'mean';
+  if (d.startsWith('t2m_max')) return 'max';
+  if (d.startsWith('t2m_min')) return 'min';
+  return null;
+}
+
+/** The statistic the current view represents — treats ERA5's plain `t2m` (no
+ * token) as the daily mean so the legend highlights the right cell. */
+export function effectiveStatistic(source: SourceId, dataset: DatasetId): StatisticId | null {
+  return (
+    statisticOf(dataset)
+    ?? (statisticsForSourceVariable(source, variableOf(dataset)).length ? 'mean' : null)
+  );
+}
+
+/** Does this source offer this variable at all? (OISST: no air; GFS: no sea.) */
+export function sourceHasVariable(source: SourceId, variable: Variable): boolean {
+  return datasetFor(source, variable, false) !== null;
+}
 
 /** True when this (source, dataset) combination actually exists. */
 export function isValidDataset(source: SourceId, dataset: DatasetId): boolean {
@@ -55,25 +125,32 @@ export type Variable = 'sst' | 't2m';
 
 /** Decompose a raw DatasetId into (variable, anomaly). */
 export function variableOf(d: DatasetId): Variable {
-  return d === 't2m' || d === 't2m_anom' ? 't2m' : 'sst';
+  return d.startsWith('t2m') ? 't2m' : 'sst';
 }
 export function anomalyOf(d: DatasetId): boolean {
-  return d === 'anom' || d === 'sst_anom' || d === 't2m_anom';
+  return d === 'anom' || d.endsWith('_anom');
 }
 
-/** Compose a raw DatasetId from (source, variable, anomaly), or null if
- * that combination doesn't exist for this source. */
+/** Compose a raw DatasetId from (source, variable, anomaly[, statistic]), or
+ * null if that combination doesn't exist for this source. `statistic` only
+ * applies to sources with a statistic axis (GFS); others ignore it. */
 export function datasetFor(
   source: SourceId,
   variable: Variable,
   anomaly: boolean,
+  statistic?: StatisticId,
 ): DatasetId | null {
   let candidate: DatasetId;
-  if (variable === 'sst') {
+  if (source === 'gfs') {
+    // GFS only carries 2 m air temp, along a min/mean/max statistic axis.
+    if (variable !== 't2m') return null;
+    candidate = `t2m_${statistic ?? 'mean'}${anomaly ? '_anom' : ''}` as DatasetId;
+  } else if (variable === 'sst') {
     if (!anomaly) candidate = 'sst';
     else candidate = source === 'oisst' ? 'anom' : 'sst_anom';
   } else {
-    // t2m only exists for ERA5; t2m_anom not built yet (future).
+    // Non-GFS air temp (ERA5) is a daily mean only — reject explicit max/min.
+    if (statistic && statistic !== 'mean') return null;
     candidate = anomaly ? 't2m_anom' : 't2m';
   }
   return isValidDataset(source, candidate) ? candidate : null;
@@ -171,6 +248,10 @@ export interface AppState {
 
   // Mobile UI
   mobileMenuOpen: boolean;
+
+  // Whether the floating "Datasets" panel is open. Shared so the header's
+  // current-view chip can open the same panel the FAB toggles. Transient.
+  datasetsPanelOpen: boolean;
 }
 
 const defaultMetadata: Metadata = {
@@ -195,8 +276,8 @@ const initialState: AppState = {
   effectiveTheme: 'dark',
   source: 'oisst',
   availableSources: ['oisst'],
-  sourceDates: { oisst: [], era5: [] },
-  datasetDates: { oisst: {}, era5: {} },
+  sourceDates: { oisst: [], era5: [], gfs: [] },
+  datasetDates: { oisst: {}, era5: {}, gfs: {} },
   dataset: 'anom',
   landColor: '#aaaaaa',
   autoRotate: false,
@@ -209,6 +290,12 @@ const initialState: AppState = {
     sst_anom: emptySlot(),
     t2m: emptySlot(),
     t2m_anom: emptySlot(),
+    t2m_mean: emptySlot(),
+    t2m_max: emptySlot(),
+    t2m_min: emptySlot(),
+    t2m_mean_anom: emptySlot(),
+    t2m_max_anom: emptySlot(),
+    t2m_min_anom: emptySlot(),
   },
   availableDates: [],
   currentDateIndex: 0,
@@ -221,6 +308,7 @@ const initialState: AppState = {
   missingDateError: null,
   notice: null,
   mobileMenuOpen: false,
+  datasetsPanelOpen: false,
 };
 
 /**
@@ -334,31 +422,112 @@ export function saveState() {
  * source doesn't cover it (sources differ in latency). Header controls and
  * keyboard shortcuts both go through here.
  */
-export function applyView(source: SourceId, variable: Variable, anomaly: boolean) {
-  const dataset = datasetFor(source, variable, anomaly) ?? datasetFor(source, variable, false);
-  if (!dataset) return; // source doesn't offer this variable at all
-
+/** Commit a concrete (source, dataset), snapping the date and optionally
+ * surfacing a capability-driven adjustment via the notice toast (e.g. "OISST
+ * has no air temp — showing sea-surface temp"). The single low-level mutator
+ * every selector routes through. */
+function commitView(source: SourceId, dataset: DatasetId, reason?: string) {
   // Batch so effects watching (source, dataset, date) never observe a
   // half-applied combination — e.g. era5 + oisst's 'anom' — and fire a
   // doomed fetch for it.
   batch(() => {
     if (source !== appState.source) setAppState('source', source);
     if (dataset !== appState.dataset) setAppState('dataset', dataset);
-    // Snap after both are applied so we check against the new (source, dataset)
-    // — e.g. toggling anomaly on a recent date the anomaly texture doesn't
-    // cover yet, or hopping to a source/dataset with a shorter history.
+    // Snap after both are applied so we check against the new (source, dataset).
     snapDateToSelection(source, dataset);
   });
+  if (reason) showNotice(reason);
   saveState();
 }
 
+export function applyView(
+  source: SourceId,
+  variable: Variable,
+  anomaly: boolean,
+  statistic?: StatisticId,
+) {
+  // Preserve the current statistic when the caller doesn't specify one (e.g.
+  // toggling anomaly keeps you on max/min); fall back toward the daily mean
+  // when the target source lacks the requested statistic.
+  const stat = statistic ?? effectiveStatistic(appState.source, appState.dataset) ?? 'mean';
+  const dataset =
+    datasetFor(source, variable, anomaly, stat)
+    ?? datasetFor(source, variable, false, stat)
+    ?? datasetFor(source, variable, anomaly, 'mean')
+    ?? datasetFor(source, variable, false, 'mean');
+  if (!dataset) return; // source doesn't offer this variable at all
+  commitView(source, dataset);
+}
+
+/** Human label for a variable, used in explain-on-change notices. */
+function variableWord(variable: Variable): string {
+  return variable === 't2m' ? 'air' : 'sea-surface';
+}
+
 /** Pick a variable, hopping source when the current one doesn't offer it
- * (e.g. Air Temp implies ERA5). Keeps the anomaly mode where possible. */
+ * (e.g. Air Temp implies ERA5/GFS). Keeps the anomaly mode + statistic where
+ * possible. */
 export function selectVariable(variable: Variable) {
+  if (variableOf(appState.dataset) === variable) return;
   const sources = sourcesFor(variable);
   if (sources.length === 0) return;
   const source = sources.includes(appState.source) ? appState.source : sources[0];
   applyView(source, variable, anomalyOf(appState.dataset));
+}
+
+/** Switch source without ever dead-ending: keep as much of the current view
+ * (variable, statistic, anomaly) as the target offers, and explain whatever
+ * had to change. This is what makes every source always clickable for quick
+ * A/B comparison. */
+export function selectSource(target: SourceId) {
+  if (target === appState.source) return;
+  const variable = variableOf(appState.dataset);
+  const anomaly = anomalyOf(appState.dataset);
+  const stat = effectiveStatistic(appState.source, appState.dataset) ?? 'mean';
+
+  // 1. Same variable + statistic available on the target → clean switch.
+  let ds = datasetFor(target, variable, anomaly, stat) ?? datasetFor(target, variable, false, stat);
+  if (ds) return commitView(target, ds);
+
+  // 2. Target has the variable but not this statistic (ERA5 ← GFS max/min).
+  if (sourceHasVariable(target, variable)) {
+    ds = datasetFor(target, variable, anomaly, 'mean') ?? datasetFor(target, variable, false, 'mean');
+    if (ds) {
+      return commitView(target, ds, `${SOURCE_LABELS[target].short} air temp is daily-mean only`);
+    }
+  }
+
+  // 3. Target lacks the variable entirely → switch to its other variable.
+  const other: Variable = variable === 't2m' ? 'sst' : 't2m';
+  ds = datasetFor(target, other, anomaly) ?? datasetFor(target, other, false);
+  const otherWord = variableWord(other) === 'air' ? 'air temp' : 'sea-surface temp';
+  if (ds) {
+    return commitView(
+      target,
+      ds,
+      `${SOURCE_LABELS[target].short} has no ${variableWord(variable)} temp — showing ${otherWord}`,
+    );
+  }
+
+  // 4. Last resort: the source's default dataset.
+  commitView(target, defaultDatasetFor(target));
+}
+
+/** Pick a statistic, hopping source when the current one doesn't offer it
+ * (Max/Min imply GFS). Keeps variable + anomaly. */
+export function selectStatistic(stat: StatisticId) {
+  const variable = variableOf(appState.dataset);
+  const anomaly = anomalyOf(appState.dataset);
+  if (statisticsForSourceVariable(appState.source, variable).includes(stat)) {
+    return applyView(appState.source, variable, anomaly, stat);
+  }
+  // Hop to a source that offers this statistic (GFS for max/min).
+  const target = appState.availableSources.find((s) =>
+    statisticsForSourceVariable(s, variable).includes(stat),
+  );
+  if (!target) return;
+  applyView(target, variable, anomaly, stat);
+  showNotice(`Daily ${stat} is ${SOURCE_LABELS[target].short} only`);
 }
 
 /** Dates that actually have a texture for this (source, dataset). Prefers the
@@ -372,11 +541,25 @@ export function datesForSelection(source: SourceId, dataset: DatasetId): string[
   );
 }
 
+/** Whether (source, dataset) actually has textures published. Distinguishes a
+ * capability that exists in code from one with data on S3 yet — e.g. GFS
+ * max/min anomalies exist as a concept but aren't built until their ERA5
+ * climatologies land. When the index carries no per-dataset breakdown for the
+ * source at all, assume present (older index shapes). */
+export function hasTextureData(source: SourceId, dataset: DatasetId): boolean {
+  const map = appState.datasetDates[source];
+  if (!map || Object.keys(map).length === 0) return true;
+  const dates = map[dataset];
+  return dates ? dates.length > 0 : false;
+}
+
 /** Human-readable name for a (source, dataset) pair, for date-snap notices. */
 function selectionLabel(source: SourceId, dataset: DatasetId): string {
   const variable = variableOf(dataset) === 't2m' ? 'air temp' : 'SST';
+  const stat = statisticOf(dataset);
+  const statLabel = stat ? ` ${stat}` : '';
   const anom = anomalyOf(dataset) ? ' anomaly' : '';
-  return `${SOURCE_LABELS[source].short} ${variable}${anom}`;
+  return `${SOURCE_LABELS[source].short}${statLabel} ${variable}${anom}`;
 }
 
 /** Snap currentDateIndex to the nearest date the (source, dataset) has
