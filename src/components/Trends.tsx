@@ -9,6 +9,7 @@ import {
   DataZoomComponent,
   MarkLineComponent,
   MarkPointComponent,
+  AxisPointerComponent,
 } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import type { EChartsOption } from 'echarts';
@@ -48,6 +49,7 @@ echarts.use([
   DataZoomComponent,
   MarkLineComponent,
   MarkPointComponent,
+  AxisPointerComponent,
   CanvasRenderer,
 ]);
 
@@ -117,6 +119,64 @@ function findRecord(yearsSeries: YearSeries[]): { year: number; doy: number; val
       if (best === null || v > best.value) best = { year: s.year, doy, value: v };
     }
   }
+  return best;
+}
+
+interface NearestLine {
+  year: number;
+  value: number; // the line's (interpolated) value at `doy`
+  color: string;
+}
+
+/**
+ * Find the year-line closest to a (doy, val) data coordinate, used by both the
+ * click-to-pin and hover-to-read interactions. For each series we linearly
+ * interpolate its value at `doy` and keep the one whose value is nearest `val`,
+ * skipping `null` gap-break segments. Returns null when the nearest line is
+ * farther than `maxPx` pixels away (so clicks/hovers in empty space don't latch
+ * onto a distant line); the threshold is measured in pixels so it's consistent
+ * across zoom levels and y-ranges.
+ */
+function nearestLine(
+  chart: echarts.ECharts,
+  doy: number,
+  val: number,
+  maxPx: number,
+): NearestLine | null {
+  const opt = chart.getOption() as {
+    series?: Array<{ name?: string; data?: Array<[number, number | null]>; lineStyle?: { color?: string } }>;
+  };
+  const seriesList = opt.series ?? [];
+
+  let best: NearestLine | null = null;
+  let bestDist = Infinity;
+  for (const s of seriesList) {
+    const data = s.data;
+    if (!data || data.length === 0) continue;
+    let yAtDoy: number | null = null;
+    for (let i = 0; i + 1 < data.length; i++) {
+      const [x0, y0] = data[i];
+      const [x1, y1] = data[i + 1];
+      if (y0 === null || y1 === null) continue; // don't interpolate across a gap
+      if (x0 <= doy && doy <= x1) {
+        const t = x1 === x0 ? 0 : (doy - x0) / (x1 - x0);
+        yAtDoy = y0 + (y1 - y0) * t;
+        break;
+      }
+    }
+    if (yAtDoy === null) continue;
+    const d = Math.abs(yAtDoy - val);
+    if (d < bestDist) {
+      bestDist = d;
+      best = { year: Number(s.name), value: yAtDoy, color: s.lineStyle?.color ?? '#888' };
+    }
+  }
+  if (!best) return null;
+
+  // Reject if the nearest line is too far in screen space.
+  const linePx = chart.convertToPixel({ gridIndex: 0 }, [doy, best.value])[1];
+  const curPx = chart.convertToPixel({ gridIndex: 0 }, [doy, val])[1];
+  if (Math.abs(linePx - curPx) > maxPx) return null;
   return best;
 }
 
@@ -215,10 +275,18 @@ function buildOption(
       lineStyle: { width: lineWidth, color },
       itemStyle: { color },
       z,
-      // Disable hover-emphasis. With 44 series, ECharts otherwise repaints
-      // all 43 non-hovered lines (fading them) every time the mouse crosses
-      // a new series — the source of the perceived flicker on mouse move.
-      emphasis: { disabled: true },
+      // `silent` stops ECharts from doing its own mouse-driven hover-emphasis.
+      // With 44 series that repainted all 43 non-hovered lines every time the
+      // mouse crossed a new series — the source of the old flicker. We drive
+      // highlighting ourselves (nearestLine + dispatchAction) so only one line
+      // repaints at a time. `focus: 'none'` keeps the other lines untouched
+      // when a line is emphasized; programmatic highlight still works on a
+      // silent series.
+      silent: true,
+      emphasis: {
+        focus: 'none' as const,
+        lineStyle: { width: Math.max(lineWidth + 1.5, 3), color },
+      },
     };
   });
 
@@ -312,28 +380,21 @@ function buildOption(
       top: narrow ? 58 : short ? 62 : 70,
       bottom: compact ? 48 : 80,
     },
-    tooltip: {
-      trigger: 'axis',
-      backgroundColor: c.tooltipBg,
-      borderColor: c.tooltipBorder,
-      textStyle: { color: c.text },
-      transitionDuration: 0,
-      confine: true,
-      axisPointer: { type: 'line', lineStyle: { color: c.axis } },
-      formatter: (params: unknown) => {
-        const arr = params as Array<{ seriesName: string; value: [number, number]; color: string }>;
-        if (!arr.length) return '';
-        const doy = arr[0].value[0];
-        const lines = [`<b>${dayLabel(doy)}</b>`];
-        const sorted = [...arr].sort((a, b) => b.value[1] - a.value[1]);
-        for (const p of sorted.slice(0, 6)) {
-          lines.push(
-            `<span style="display:inline-block;width:8px;height:8px;background:${p.color};border-radius:50%;margin-right:6px"></span>${p.seriesName}: <b>${p.value[1].toFixed(3)}°C</b>`,
-          );
-        }
-        if (arr.length > 6) lines.push(`… and ${arr.length - 6} more years`);
-        return lines.join('<br>');
-      },
+    // No tooltip. An axis-trigger tooltip would `highlight` every series at the
+    // hovered x (the axis-pointer's "show all related data" behavior), which
+    // with emphasis enabled lights up nearly all 44 lines at once. Instead the
+    // cursor lights up the single nearest year-line (see the zr 'mousemove'
+    // handler) and its value shows in a fixed corner readout that never covers
+    // the data. A standalone axis-pointer draws just the vertical crosshair —
+    // it renders the reference line without emphasizing any series.
+    tooltip: { show: false },
+    axisPointer: {
+      show: true,
+      type: 'line',
+      triggerOn: 'mousemove',
+      triggerTooltip: false,
+      lineStyle: { color: c.axis },
+      label: { show: false },
     },
     xAxis: {
       type: 'value',
@@ -345,9 +406,15 @@ function buildOption(
         formatter: (v: number) => dayLabel(v),
       },
       splitLine: { show: false },
+      // Dashed crosshair lines on both axes mark the cursor's exact position
+      // (the native cursor is hidden via CSS). The standalone axis-pointer
+      // (configured at the top level) only draws the reference lines — unlike
+      // an axis-trigger tooltip, it doesn't emphasize any series.
+      axisPointer: { show: true },
     },
     yAxis: {
       type: 'value',
+      axisPointer: { show: true },
       // The axis name overlaps the tick labels and record annotation on
       // small screens; the title already identifies the dataset there.
       name: compact ? undefined : datasetLabel,
@@ -436,6 +503,12 @@ export const Trends = () => {
   let chart: echarts.ECharts | undefined;
   let resizeHandler: (() => void) | undefined;
   let wheelHandler: ((e: WheelEvent) => void) | undefined;
+  let hoverRaf = 0; // pending requestAnimationFrame id for the hover resolver
+  // Circle drawn where the cursor's time crosses the highlighted line — added
+  // directly to zrender (not via setOption) so it can be repositioned every
+  // frame cheaply. Theme colors are cached so the marker ring stays correct.
+  let marker: InstanceType<typeof echarts.graphic.Circle> | undefined;
+  let themeColors: ThemeColors | undefined;
 
   // Track the current region from appState so the resource refetches whenever
   // the user changes the selection.
@@ -449,6 +522,11 @@ export const Trends = () => {
   // Click-to-highlight: stores the year the user last clicked, or null for
   // "no manual highlight" (only the default current/prev-year styling applies).
   const [selectedYear, setSelectedYear] = createSignal<number | null>(null);
+
+  // Hover-to-read: the nearest year-line under the cursor and its value, shown
+  // in the fixed corner readout. null when the cursor is off the plot or far
+  // from any line.
+  const [hover, setHover] = createSignal<NearestLine & { doy: number } | null>(null);
 
   // Container-size layout regime, re-measured on resize so the chart
   // restyles itself when e.g. a phone rotates. 0×0 (hidden container)
@@ -466,6 +544,18 @@ export const Trends = () => {
     if (!chartRef) return;
     chart = echarts.init(chartRef, undefined, { renderer: 'canvas' });
     measureLayout();
+
+    // The hover marker rides above every line (z beats the selected-year line's
+    // z of 100). Added once to the zrender root; it survives setOption since
+    // it's not part of the ECharts model. Positioned/styled per hover.
+    marker = new echarts.graphic.Circle({
+      silent: true,
+      z: 999,
+      shape: { cx: 0, cy: 0, r: 4.5 },
+      style: { fill: '#000', stroke: '#fff', lineWidth: 1.5 },
+    });
+    marker.hide();
+    chart.getZr().add(marker);
     resizeHandler = () => {
       chart?.resize();
       measureLayout();
@@ -591,56 +681,77 @@ export const Trends = () => {
       if (!c) return;
       const pixel = [event.offsetX, event.offsetY];
       if (!c.containPixel({ gridIndex: 0 }, pixel)) return;
-      const dataCoord = c.convertFromPixel({ gridIndex: 0 }, pixel) as [number, number];
-      const [doy, val] = dataCoord;
-      const opt = c.getOption() as { series?: Array<{ name?: string; data?: Array<[number, number]> }> };
-      const seriesList = opt.series ?? [];
-
-      // For each series, find its y-value at the clicked doy (linear interp)
-      // and rank by distance to the click y.
-      let bestYear: number | null = null;
-      let bestDist = Infinity;
-      for (const s of seriesList) {
-        const data = s.data;
-        if (!data || data.length === 0) continue;
-        let yAtDoy: number | null = null;
-        for (let i = 0; i + 1 < data.length; i++) {
-          const [x0] = data[i];
-          const [x1] = data[i + 1];
-          if (x0 <= doy && doy <= x1) {
-            const t = x1 === x0 ? 0 : (doy - x0) / (x1 - x0);
-            yAtDoy = data[i][1] + (data[i + 1][1] - data[i][1]) * t;
-            break;
-          }
-        }
-        if (yAtDoy === null) continue;
-        const d = Math.abs(yAtDoy - val);
-        if (d < bestDist) {
-          bestDist = d;
-          bestYear = Number(s.name);
-        }
-      }
-
-      // Convert the click-to-line distance from data units to pixels, so
-      // "within N px" is consistent regardless of zoom or zoomed y-range.
-      // Lines are 0.7–2 px thin but stack densely; a generous tolerance
-      // beats requiring a sniper-shot click.
-      if (bestYear !== null) {
-        const yPx = c.convertToPixel({ gridIndex: 0 }, [doy, val + bestDist])[1];
-        const clickedPx = c.convertToPixel({ gridIndex: 0 }, [doy, val])[1];
-        if (Math.abs(yPx - clickedPx) > 30) bestYear = null;
-      }
-
-      if (bestYear === null) return;
-      setSelectedYear((curr) => (curr === bestYear ? null : bestYear));
+      const [doy, val] = c.convertFromPixel({ gridIndex: 0 }, pixel) as [number, number];
+      // Lines are 0.7–2 px thin but stack densely; a generous tolerance beats
+      // requiring a sniper-shot click.
+      const near = nearestLine(c, doy, val, 30);
+      if (!near) return;
+      setSelectedYear((curr) => (curr === near.year ? null : near.year));
     });
+
+    // Hover-to-read: light up the nearest year-line, surface its value in the
+    // corner readout, and drop a circle where the cursor's time crosses that
+    // line. Throttled to one resolve per animation frame so a fast mouse drag
+    // doesn't run nearestLine (a 44-series scan) per pixel.
+    let pendingPixel: [number, number] | null = null;
+    chart.getZr().on('mousemove', (event) => {
+      pendingPixel = [event.offsetX, event.offsetY];
+      if (hoverRaf) return;
+      hoverRaf = requestAnimationFrame(() => {
+        hoverRaf = 0;
+        const c = chart;
+        const px = pendingPixel;
+        if (!c || !px) return;
+        if (!c.containPixel({ gridIndex: 0 }, px)) {
+          clearHover();
+          return;
+        }
+        const [doy, val] = c.convertFromPixel({ gridIndex: 0 }, px) as [number, number];
+        const near = nearestLine(c, doy, val, 60);
+        if (!near) {
+          clearHover();
+          return;
+        }
+        // Marker sits on the (vertical) cursor line, at the highlighted line's
+        // value there — the exact point being read.
+        const [mx, my] = c.convertToPixel({ gridIndex: 0 }, [doy, near.value]) as [number, number];
+        marker?.attr({
+          shape: { cx: mx, cy: my, r: 4.5 },
+          style: { fill: near.color, stroke: themeColors?.text ?? '#fff', lineWidth: 1.5 },
+        });
+        marker?.show();
+        setHover({ ...near, doy });
+      });
+    });
+    chart.getZr().on('globalout', clearHover);
   });
+
+  // Clear all hover affordances together (readout signal + marker).
+  const clearHover = () => {
+    setHover(null);
+    marker?.hide();
+  };
+
+  // Reflect the hovered year onto the chart: emphasize that one line, downplay
+  // the previously hovered one. Tracked outside the signal so we only dispatch
+  // on an actual change, and so a full setOption (which wipes emphasis state)
+  // can reset it.
+  let highlightedYear: number | null = null;
+  const applyHighlight = (year: number | null) => {
+    const c = chart;
+    if (!c || year === highlightedYear) return;
+    if (highlightedYear !== null) c.dispatchAction({ type: 'downplay', seriesName: String(highlightedYear) });
+    if (year !== null) c.dispatchAction({ type: 'highlight', seriesName: String(year) });
+    highlightedYear = year;
+  };
+  createEffect(() => applyHighlight(hover()?.year ?? null));
 
   onCleanup(() => {
     if (resizeHandler) window.removeEventListener('resize', resizeHandler);
     if (wheelHandler && chartRef) {
       chartRef.removeEventListener('wheel', wheelHandler, { capture: true });
     }
+    if (hoverRaf) cancelAnimationFrame(hoverRaf);
     chart?.dispose();
     chart = undefined;
   });
@@ -660,6 +771,12 @@ export const Trends = () => {
     const layout = chartLayout();
     if (!chart || !data) return;
     const colors = readThemeColors();
+    themeColors = colors; // cached for the hover marker's ring
+    // A full re-render (replaceMerge) rebuilds every series, wiping any
+    // emphasis state. Drop the stale hover so the readout, marker, and the
+    // highlight-tracking ref don't point at a line that no longer exists.
+    clearHover();
+    highlightedYear = null;
     chart.setOption(buildOption(data, src, ds, colors, sel, chart, layout), true);
   });
 
@@ -741,6 +858,17 @@ export const Trends = () => {
           <div class="trends-loading">Loading time-series…</div>
         </Show>
         <div ref={chartRef} class="trends-chart"></div>
+        {/* Fixed corner readout for the hovered year — placed away from the
+            cursor so it never covers the data the user is inspecting. */}
+        <Show when={hover()}>
+          {(h) => (
+            <div class="trends-hover-readout">
+              <span class="trends-hover-year" style={{ color: h().color }}>{h().year}</span>
+              <span class="trends-hover-date">{dayLabel(h().doy)}</span>
+              <span class="trends-hover-value">{h().value.toFixed(2)}°C</span>
+            </div>
+          )}
+        </Show>
       </div>
       {/* Grid-mode small multiples — also always mounted. */}
       <Show when={appState.availableRegions.length > 1}>
@@ -755,7 +883,8 @@ export const Trends = () => {
             <span>Click any region to expand. Use the Source, Variable and Anomaly toggles in the header to switch between OISST/ERA5, SST/2 m air temp, and raw vs. anomaly.</span>
           }
         >
-          <span>Click any line to highlight that year (click again to clear). Drag the slider
+          <span>Hover the chart to read the nearest year's value. Click any line to highlight
+          that year (click again to clear). Drag the slider
           below the chart to zoom in time of year. Scroll inside the chart to zoom; shift-scroll
           to pan. Use the Source and Dataset toggles in the header to switch between OISST/ERA5
           and their available datasets.</span>

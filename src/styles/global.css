@@ -797,6 +797,39 @@ body[data-active-tab="about"] #scene-wrapper {
     min-height: 0;
     display: flex;
     flex-direction: column;
+    position: relative;
+}
+
+/* Hovered-year readout, pinned to the top-left corner of the chart (clear of
+   the centered title and the right/top legend). pointer-events: none so it
+   never intercepts the zr mouse handlers that drive the hover. */
+.trends-hover-readout {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 5;
+    pointer-events: none;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    background: var(--chart-tooltip-bg);
+    border: 1px solid var(--chart-tooltip-border);
+    color: var(--chart-text);
+    font-size: 13px;
+    line-height: 1.3;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+.trends-hover-year {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.trends-hover-value {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
 }
 
 .trends-grid-view {
@@ -813,6 +846,15 @@ body[data-trends-mode="grid"] .trends-grid-view { display: block; }
     flex: 1;
     min-height: 0;
     width: 100%;
+}
+
+/* Hide the native cursor over the chart so it never covers the data point
+   being inspected. The dashed x/y axis-pointer lines show the cursor's exact
+   position and a circle marks where it crosses the highlighted line.
+   !important overrides the inline cursor zrender writes onto the canvas. */
+.trends-chart,
+.trends-chart canvas {
+    cursor: none !important;
 }
 
 /* =========================================================================
