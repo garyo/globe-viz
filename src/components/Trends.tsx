@@ -59,20 +59,6 @@ const SOURCE_LABELS: Record<SourceId, string> = {
   gfs: 'NOAA GFS',
 };
 
-const DATASET_AXIS_LABELS: Record<DatasetId, string> = {
-  sst: 'SST (°C)',
-  anom: 'Anomaly vs. 1971–2000 mean (°C)',
-  sst_anom: 'SST Anomaly vs. 1971–2000 mean (°C)',
-  t2m: '2 m Air Temp (°C)',
-  t2m_anom: '2 m Air Temp Anomaly vs. 1971–2000 mean (°C)',
-  t2m_mean: 'Daily Mean 2 m Air Temp (°C)',
-  t2m_max: 'Daily Max 2 m Air Temp (°C)',
-  t2m_min: 'Daily Min 2 m Air Temp (°C)',
-  t2m_mean_anom: 'Daily Mean 2 m Air Temp Anomaly vs. 1971–2000 mean (°C)',
-  t2m_max_anom: 'Daily Max 2 m Air Temp Anomaly vs. 1971–2000 mean (°C)',
-  t2m_min_anom: 'Daily Min 2 m Air Temp Anomaly vs. 1971–2000 mean (°C)',
-};
-
 const DATASET_TITLE_FRAGMENT: Record<DatasetId, string> = {
   sst: 'Sea Surface Temperature',
   anom: 'SST Anomaly vs. 1971–2000 mean',
@@ -290,7 +276,6 @@ function buildOption(
     };
   });
 
-  const datasetLabel = DATASET_AXIS_LABELS[dataset];
   const regionLabel = payload.region_label || REGION_LABELS[payload.region] || payload.region;
   const title = narrow
     ? `${regionLabel} — ${DATASET_TITLE_SHORT[dataset]}`
@@ -375,7 +360,9 @@ function buildOption(
       subtextStyle: { color: c.subtitle, fontSize: 11 },
     },
     grid: {
-      left: narrow ? 44 : 60,
+      // Just enough for the y tick labels. Wide layouts used to leave extra
+      // room for the (now removed) axis name; compact never had one.
+      left: narrow ? 44 : 46,
       right: narrow ? 14 : 30,
       // compact: one-line title plus the horizontal legend row.
       top: narrow ? 58 : short ? 62 : 70,
@@ -416,10 +403,8 @@ function buildOption(
     yAxis: {
       type: 'value',
       axisPointer: { show: true },
-      // The axis name overlaps the tick labels and record annotation on
-      // small screens; the title already identifies the dataset there.
-      name: compact ? undefined : datasetLabel,
-      nameTextStyle: { color: c.text },
+      // No axis name: the centered title already spells out the dataset and
+      // units, so an axis name would just duplicate it and eat left margin.
       axisLine: { lineStyle: { color: c.axis } },
       // Format labels with just enough precision to distinguish adjacent
       // ticks. At full zoom the y range is ~1.5°C and ticks are at 0.2°C
