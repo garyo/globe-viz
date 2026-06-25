@@ -302,35 +302,68 @@ function buildOption(
       label: { formatter: string; position?: string };
     }> = [];
 
-    if (record) {
-      markData.push({
-        coord: [record.doy, record.value],
-        label: {
-          formatter: `record: ${dayLabel(record.doy)}, ${record.year}\n${record.value.toFixed(2)}°C`,
-          // The record is the all-time max, so its dot always sits at the very
-          // top of the plot — a label above it collides with the header band
-          // (y-axis name, subtitle) or clips off the top edge. Tuck it beside
-          // the dot instead, on whichever side has room.
-          position: record.doy < 183 ? 'right' : 'left',
-        },
-      });
-    }
-
     const latestPoints = years[years.length - 1].data;
     const lastReal = [...latestPoints].reverse().find((p) => p[1] !== null) as
       | [number, number]
       | undefined;
-    if (lastReal) {
-      const [doy, val] = lastReal;
+
+    // When the current year is at (or near) the all-time high, the record dot
+    // and the latest-reading dot sit close together near the top and their
+    // labels overlap into gibberish. Detect that and fan the labels to opposite
+    // sides — the leftmost (earlier) dot points left, the other right — so both
+    // stay readable. Proximity is measured against the data's y-extent so it's
+    // independent of zoom level.
+    let yMin = record ? record.value : 0;
+    if (record) {
+      for (const s of years) for (const [, v] of s.data) if (v !== null && v < yMin) yMin = v;
+    }
+    const yRange = record ? Math.max(1e-6, record.value - yMin) : 1;
+    // The latest reading *is* the all-time record — one dot, one merged label
+    // (two identical labels would just be noise).
+    const latestIsRecord = !!record && !!lastReal && record.year === lastYear && record.doy === lastReal[0];
+    const recordNearLatest =
+      !latestIsRecord &&
+      !!record &&
+      !!lastReal &&
+      Math.abs(record.doy - lastReal[0]) < 30 &&
+      Math.abs(record.value - lastReal[1]) < yRange * 0.1;
+    const recordIsLeft = !!record && !!lastReal && record.doy <= lastReal[0];
+
+    if (record && latestIsRecord) {
       markData.push({
-        coord: [doy, val],
+        coord: [record.doy, record.value],
         label: {
-          formatter: `${dayLabel(doy)}, ${lastYear}\n${val.toFixed(2)}°C`,
-          // Late-year points sit near the right edge; keep the label inside
-          // the plot on narrow screens.
-          position: narrow ? 'left' : 'right',
+          formatter: `latest & record: ${dayLabel(record.doy)}, ${record.year}\n${record.value.toFixed(2)}°C`,
+          position: record.doy < 183 ? 'right' : 'left',
         },
       });
+    } else {
+      if (record) {
+        markData.push({
+          coord: [record.doy, record.value],
+          label: {
+            formatter: `record: ${dayLabel(record.doy)}, ${record.year}\n${record.value.toFixed(2)}°C`,
+            // The record is the all-time max, so its dot always sits at the very
+            // top of the plot — a label above it collides with the header band or
+            // clips off the top edge. Tuck it beside the dot: away from the latest
+            // reading when they collide, otherwise on whichever side has room.
+            position: recordNearLatest ? (recordIsLeft ? 'left' : 'right') : record.doy < 183 ? 'right' : 'left',
+          },
+        });
+      }
+
+      if (lastReal) {
+        const [doy, val] = lastReal;
+        markData.push({
+          coord: [doy, val],
+          label: {
+            formatter: `${dayLabel(doy)}, ${lastYear}\n${val.toFixed(2)}°C`,
+            // Opposite the record when they collide; otherwise inside the plot
+            // (late-year points sit near the right edge, so flip left on narrow).
+            position: recordNearLatest ? (recordIsLeft ? 'right' : 'left') : narrow ? 'left' : 'right',
+          },
+        });
+      }
     }
 
     if (markData.length > 0) {
