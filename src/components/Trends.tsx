@@ -277,9 +277,11 @@ function buildOption(
   });
 
   const regionLabel = payload.region_label || REGION_LABELS[payload.region] || payload.region;
+  // Every dataset is a temperature in °C; the unit rides in the title now that
+  // the (redundant) y-axis name is gone.
   const title = narrow
-    ? `${regionLabel} — ${DATASET_TITLE_SHORT[dataset]}`
-    : `${regionLabel} — ${DATASET_TITLE_FRAGMENT[dataset]}, ${firstYear}–${lastYear}`;
+    ? `${regionLabel} — ${DATASET_TITLE_SHORT[dataset]} (°C)`
+    : `${regionLabel} — ${DATASET_TITLE_FRAGMENT[dataset]} (°C), ${firstYear}–${lastYear}`;
 
   // Match the static graph's labeling: the two oldest years and the five
   // most recent (current year + four prior). Newest first so the current
