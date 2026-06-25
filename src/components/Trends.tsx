@@ -320,10 +320,11 @@ function buildOption(
         coord: [record.doy, record.value],
         label: {
           formatter: `record: ${dayLabel(record.doy)}, ${record.year}\n${record.value.toFixed(2)}°C`,
-          // The record sits near the top of the plot; on compact layouts a
-          // label above it collides with the title/legend band, so tuck it
-          // beside the dot, on whichever side has room.
-          position: compact ? (record.doy < 183 ? 'right' : 'left') : 'top',
+          // The record is the all-time max, so its dot always sits at the very
+          // top of the plot — a label above it collides with the header band
+          // (y-axis name, subtitle) or clips off the top edge. Tuck it beside
+          // the dot instead, on whichever side has room.
+          position: record.doy < 183 ? 'right' : 'left',
         },
       });
     }
