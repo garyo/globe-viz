@@ -848,15 +848,6 @@ body[data-trends-mode="grid"] .trends-grid-view { display: block; }
     width: 100%;
 }
 
-/* Hide the native cursor over the chart so it never covers the data point
-   being inspected. The dashed x/y axis-pointer lines show the cursor's exact
-   position and a circle marks where it crosses the highlighted line.
-   !important overrides the inline cursor zrender writes onto the canvas. */
-.trends-chart,
-.trends-chart canvas {
-    cursor: none !important;
-}
-
 /* =========================================================================
    Trends grid (small multiples)
    ========================================================================= */

@@ -525,6 +525,7 @@ export const Trends = () => {
   let chart: echarts.ECharts | undefined;
   let resizeHandler: (() => void) | undefined;
   let wheelHandler: ((e: WheelEvent) => void) | undefined;
+  let cursorHandler: ((e: MouseEvent) => void) | undefined;
   let hoverRaf = 0; // pending requestAnimationFrame id for the hover resolver
   // Circle drawn where the cursor's time crosses the highlighted line — added
   // directly to zrender (not via setOption) so it can be repositioned every
@@ -652,9 +653,76 @@ export const Trends = () => {
       return { startValue: newSv, endValue: newEv, index: dzIdx };
     };
 
+    // Slide the visible time-window left/right by a wheel pixel delta without
+    // changing its width. The x-axis is a fixed 0..365 leap-aligned day-of-year
+    // span, so the panned window is clamped inside that, edge-aligned, rather
+    // than letting ECharts clamp each endpoint independently (which would
+    // shrink the window at the boundary).
+    const X_AXIS_MIN = 0;
+    const X_AXIS_MAX = 365;
+    const panAxisX = (
+      deltaPx: number,
+    ): { startValue: number; endValue: number; index: number } | null => {
+      if (!chart) return null;
+      const opt = chart.getOption() as {
+        dataZoom?: Array<{ type?: string; xAxisIndex?: number }>;
+      };
+      const dzIdx = (opt.dataZoom ?? []).findIndex(
+        (z) => z.type === 'inside' && z.xAxisIndex === 0,
+      );
+      if (dzIdx < 0) return null;
+
+      const axisModel = (chart as unknown as {
+        getModel: () => {
+          getComponent: (n: string, i: number) => {
+            axis: { scale: { getExtent: () => [number, number] } };
+          } | undefined;
+        };
+      }).getModel().getComponent('xAxis', 0);
+      const extent = axisModel?.axis.scale.getExtent();
+      if (!extent || extent[1] === extent[0]) return null;
+      const [sv, ev] = extent;
+      const range = ev - sv;
+
+      // Pixel delta → data delta so a notch pans the content 1:1 with the wheel.
+      const pxStart = (chart.convertToPixel({ gridIndex: 0 }, [sv, 0]) as [number, number])[0];
+      const pxEnd = (chart.convertToPixel({ gridIndex: 0 }, [ev, 0]) as [number, number])[0];
+      const gridPxWidth = Math.abs(pxEnd - pxStart) || 1;
+      const deltaData = (deltaPx / gridPxWidth) * range;
+
+      let nsv = sv + deltaData;
+      let nev = ev + deltaData;
+      if (nsv < X_AXIS_MIN) {
+        nsv = X_AXIS_MIN;
+        nev = X_AXIS_MIN + range;
+      } else if (nev > X_AXIS_MAX) {
+        nev = X_AXIS_MAX;
+        nsv = X_AXIS_MAX - range;
+      }
+      return { startValue: nsv, endValue: nev, index: dzIdx };
+    };
+
     wheelHandler = (e: WheelEvent) => {
       if (!chart) return;
       e.preventDefault();
+
+      // Pan the time axis instead of zooming when shift is held (browsers
+      // remap shift+wheel to a horizontal delta, though some still report it on
+      // deltaY) or when the device sends a dominant horizontal delta — a
+      // side-scroll wheel or a two-finger horizontal trackpad swipe.
+      const horizontalDelta = e.shiftKey ? (e.deltaX !== 0 ? e.deltaX : e.deltaY) : e.deltaX;
+      if (horizontalDelta !== 0 && (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY))) {
+        const pan = panAxisX(horizontalDelta);
+        if (pan) {
+          chart.dispatchAction({
+            type: 'dataZoom',
+            dataZoomIndex: pan.index,
+            startValue: pan.startValue,
+            endValue: pan.endValue,
+          });
+        }
+        return;
+      }
 
       // Mouse pixel → both axis data values. We don't gate on containPixel:
       // when the cursor is just above the grid (over the title or
@@ -693,6 +761,27 @@ export const Trends = () => {
     };
     chartRef.addEventListener('wheel', wheelHandler, { capture: true, passive: false });
 
+    // Hide the native cursor only over the plot grid (the dashed crosshair
+    // stands in for it there, so it never covers the point being read). The
+    // dataZoom slider shares the same canvas, so a blanket CSS `cursor: none`
+    // would hide the cursor over the slider too and make it unusable. This
+    // listener runs after zrender's own mousemove handler (registered first,
+    // during init), so off-grid it leaves zrender's cursor — the slider's
+    // resize/grab affordances — untouched. We override zrender's own viewport
+    // root (the canvas layers' shared parent, the element zrender writes its
+    // cursor onto); writing to the outer container or getZr().dom instead is
+    // shadowed by that inner cursor and has no effect over the canvas.
+    const zrRoot = chart.getZr().painter.getViewportRoot();
+    cursorHandler = (e: MouseEvent) => {
+      if (!chart || !chartRef || !zrRoot) return;
+      const rect = chartRef.getBoundingClientRect();
+      const px: [number, number] = [e.clientX - rect.left, e.clientY - rect.top];
+      if (chart.containPixel({ gridIndex: 0 }, px)) {
+        zrRoot.style.cursor = 'none';
+      }
+    };
+    chartRef.addEventListener('mousemove', cursorHandler);
+
     // Listen at the renderer level. The chart-level 'click' fires through
     // ECharts' hit-testing, which struggles to register clicks on thin
     // lines even with `triggerLineEvent`, and the `inside` dataZoom can
@@ -703,7 +792,8 @@ export const Trends = () => {
       if (!c) return;
       const pixel = [event.offsetX, event.offsetY];
       if (!c.containPixel({ gridIndex: 0 }, pixel)) return;
-      const [doy, val] = c.convertFromPixel({ gridIndex: 0 }, pixel) as [number, number];
+      const [rawDoy, val] = c.convertFromPixel({ gridIndex: 0 }, pixel) as [number, number];
+      const doy = Math.round(rawDoy); // snap to nearest day; see hover resolver below
       // Lines are 0.7–2 px thin but stack densely; a generous tolerance beats
       // requiring a sniper-shot click.
       const near = nearestLine(c, doy, val, 30);
@@ -728,7 +818,15 @@ export const Trends = () => {
           clearHover();
           return;
         }
-        const [doy, val] = c.convertFromPixel({ gridIndex: 0 }, px) as [number, number];
+        const [rawDoy, val] = c.convertFromPixel({ gridIndex: 0 }, px) as [number, number];
+        // Snap to the nearest whole day so the readout label, marker and
+        // highlighted line all key off one date. Without this, a pointer a
+        // fraction of a day past the latest year's final point (e.g. just
+        // right of Jun 28) falls outside that year's last segment and the
+        // "nearest line" jumps to whichever year still has data at the
+        // fractional day — while the label, rounding the same fraction down,
+        // still reads Jun 28.
+        const doy = Math.round(rawDoy);
         const near = nearestLine(c, doy, val, 60);
         if (!near) {
           clearHover();
@@ -772,6 +870,9 @@ export const Trends = () => {
     if (resizeHandler) window.removeEventListener('resize', resizeHandler);
     if (wheelHandler && chartRef) {
       chartRef.removeEventListener('wheel', wheelHandler, { capture: true });
+    }
+    if (cursorHandler && chartRef) {
+      chartRef.removeEventListener('mousemove', cursorHandler);
     }
     if (hoverRaf) cancelAnimationFrame(hoverRaf);
     chart?.dispose();
