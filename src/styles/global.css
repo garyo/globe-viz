@@ -430,10 +430,16 @@ html {
 
     .availability-panel {
         right: 0.5rem;
-        left: 0.5rem;
         bottom: 7rem;
         min-width: 0;
         max-width: none;
+    }
+
+    /* Phones use the compact table width, so let the footer fill it and wrap
+       rather than fixing its width; the two-line reserve still keeps the panel
+       height stable across sources. */
+    .cap-foot {
+        width: auto;
     }
 }
 
@@ -564,7 +570,14 @@ html {
 .cap-foot {
     margin: 0.45rem 0 0;
     font-size: 0.66rem;
+    line-height: 1.35;
     color: var(--text-secondary);
+    /* Fixed width + two reserved lines keep the panel one constant size across
+       sources: OISST's note fits on a single line, while the longer ERA5/GFS
+       notes wrap into the reserved second line instead of widening or growing
+       the dialog as the user clicks between sources. */
+    width: 14.75rem;
+    min-height: 2.7em;
 }
 
 .cap-foot-warn {

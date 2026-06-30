@@ -24,6 +24,16 @@ const SOURCE_NOTES: Record<SourceId, string> = {
   gfs: 'Forecast · near-real-time · short record',
 };
 
+// Footer caption under the matrix, keyed to the *selected* source so the panel
+// explains whatever the user is currently looking at. `warn` flags the
+// cautionary GFS note (short record) in the accent color; the others are plain
+// provenance and stay muted.
+const SOURCE_FOOTERS: Record<SourceId, { text: string; warn: boolean }> = {
+  oisst: { text: 'OISST: satellite sea-surface temp, ~2-day lag.', warn: false },
+  era5: { text: 'ERA5: reanalysis back to 1940, ~6-day lag — best for long trends.', warn: false },
+  gfs: { text: 'GFS: latest data, short record — use ERA5 for long trends.', warn: true },
+};
+
 const STAT_SHORT: Record<StatisticId, string> = { mean: 'Mean', max: 'Max', min: 'Min' };
 
 /**
@@ -205,7 +215,9 @@ export const AvailabilityFab = () => {
         </label>
 
         <Show when={appState.activeTab === 'trends'}>
-          <p class="cap-foot cap-foot-warn">GFS: latest data, short record — use ERA5 for long trends.</p>
+          <p class="cap-foot" classList={{ 'cap-foot-warn': SOURCE_FOOTERS[appState.source].warn }}>
+            {SOURCE_FOOTERS[appState.source].text}
+          </p>
         </Show>
       </div>
     </Show>
