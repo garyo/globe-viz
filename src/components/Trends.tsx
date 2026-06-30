@@ -236,7 +236,7 @@ function buildOption(
     let z = 1;
     if (s.year === lastYear) {
       color = c.yearCurrent;
-      lineWidth = 2;
+      lineWidth = 2.5;
       z = 10;
     } else if (s.year === lastYear - 1) {
       color = c.yearPrev;
@@ -484,7 +484,8 @@ function buildOption(
       { type: 'inside', yAxisIndex: 0, zoomOnMouseWheel: false, moveOnMouseWheel: false },
     ],
     // compact: a single legend row under the title, where it can't cover the
-    // data. Otherwise the classic floating box at the right of the plot.
+    // data. Otherwise a floating box at the lower-left of the plot, clear of
+    // the Datasets panel that pops open over the lower-right.
     legend: compact
       ? {
           show: true,
@@ -503,7 +504,7 @@ function buildOption(
           data: legendYears,
           selectedMode: false,
           orient: 'vertical',
-          right: 40,
+          left: 56,
           bottom: 90,
           itemWidth: 18,
           itemHeight: 2,
