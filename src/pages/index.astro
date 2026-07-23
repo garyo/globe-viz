@@ -37,6 +37,22 @@ import '../styles/global.css';
       data-website-id="f647d14c-5299-4539-85b2-266cb32dba9f"
       data-domains="globe-viz.oberbrunner.com"></script>
 
+    <!-- Matomo (trial alongside Umami); cookie-less, prod hostname only -->
+    <script is:inline>
+      if (location.hostname === 'globe-viz.oberbrunner.com') {
+        var _paq = (window._paq = window._paq || []);
+        _paq.push(['disableCookies']);
+        _paq.push(['trackPageView']);
+        _paq.push(['enableLinkTracking']);
+        _paq.push(['setTrackerUrl', 'https://matomo.oberbrunner.com/matomo.php']);
+        _paq.push(['setSiteId', '3']);
+        var mg = document.createElement('script');
+        mg.async = true;
+        mg.src = 'https://matomo.oberbrunner.com/matomo.js';
+        document.head.appendChild(mg);
+      }
+    </script>
+
     <!-- Set the active theme synchronously, before paint, to avoid FOUC.
          Reads themePref out of saved appState (set by Solid + saveState()),
          falling back to OS preference when unset or 'system'. -->
