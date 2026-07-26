@@ -168,30 +168,36 @@ function nearestLine(
 
 /**
  * Pick how many decimals the y-axis labels need so that consecutive ticks
- * don't round to the same string. Reads the chart's current y-axis view
- * range — when zoomed in tightly, ECharts picks small tick intervals
- * (e.g. 0.05) and one decimal is no longer enough to distinguish them.
- * Returns at least 1 decimal so the label column width is stable when
- * we're not zoomed in tight.
+ * don't round to the same string. Reads the actual tick spacing from the
+ * chart's y-axis scale — small-range data (anomalies) and tight zooms both
+ * produce intervals like 0.05, where one decimal collapses neighboring
+ * ticks into the same label ("0.8, 0.8"). Returns at least 1 decimal so
+ * the label column width is stable on wide ranges.
  */
 function yLabelDecimals(chart: echarts.ECharts | undefined): number {
   if (!chart) return 1;
   try {
-    const opt = chart.getOption() as {
-      dataZoom?: Array<{ type?: string; yAxisIndex?: number; startValue?: number; endValue?: number }>;
-    };
-    const dz = (opt.dataZoom ?? []).find((z) => z.type === 'inside' && z.yAxisIndex === 0);
-    if (!dz || dz.startValue === undefined || dz.endValue === undefined) return 1;
-    const range = dz.endValue - dz.startValue;
-    // splitNumber=10 so tick interval ≈ range/10. Need enough decimals to
-    // distinguish ticks that are this far apart.
-    const interval = range / 10;
-    // Need enough decimals so two adjacent ticks (interval apart) display
-    // differently. The threshold is interval >= 10^-n for n decimals.
-    if (interval >= 0.1) return 1;
-    if (interval >= 0.01) return 2;
-    if (interval >= 0.001) return 3;
-    return 4;
+    const axisModel = (chart as unknown as {
+      getModel: () => {
+        getComponent: (n: string, i: number) => {
+          axis: { scale: { getTicks: () => Array<{ value: number }> } };
+        } | undefined;
+      };
+    }).getModel().getComponent('yAxis', 0);
+    const ticks = axisModel?.axis.scale.getTicks() ?? [];
+    if (ticks.length < 2) return 1;
+    // Use the smallest gap: the axis is pinned to the exact data extent, so
+    // the first/last gap can be much narrower than the regular interval
+    // (regular ticks …0.6, 0.75, then max at 0.83).
+    let interval = Infinity;
+    for (let i = 1; i < ticks.length; i++) {
+      const gap = ticks[i].value - ticks[i - 1].value;
+      if (gap > 1e-9 && gap < interval) interval = gap;
+    }
+    if (!Number.isFinite(interval)) return 1;
+    // n decimals distinguish adjacent ticks iff interval >= 10^-n; the
+    // 1.0001 factor absorbs float error (0.04999... is really 0.05).
+    return Math.min(4, Math.max(1, Math.ceil(-Math.log10(interval * 1.0001))));
   } catch {
     return 1;
   }
@@ -445,9 +451,9 @@ function buildOption(
       // ticks. At full zoom the y range is ~1.5°C and ticks are at 0.2°C
       // — 1 decimal works. When zoomed in tightly the interval drops to
       // 0.05 or 0.01 and 1 decimal collapses neighboring ticks into the
-      // same string ("20.2, 20.2, 20.3, 20.3"). yLabelDecimals queries
-      // the current dataZoom range and picks an interval-appropriate
-      // precision.
+      // same string ("20.2, 20.2, 20.3, 20.3"), and anomaly data has a
+      // small range at full zoom too. yLabelDecimals reads the actual
+      // tick spacing and picks an interval-appropriate precision.
       axisLabel: { color: c.text, formatter: (v: number) => v.toFixed(yLabelDecimals(chart)) },
       splitLine: { lineStyle: { color: c.grid } },
       scale: true,
