@@ -61,7 +61,8 @@ const Cell = (props: { cell: ReadoutCell | null; signed?: boolean }) => (
     title={cellTitle(props.cell)}
   >
     <span
-      classList={{ swatch: !!props.cell?.color }}
+      class="swatch"
+      classList={{ colored: !!props.cell?.color }}
       style={props.cell?.color ? { '--swatch': props.cell.color } : undefined}
     >
       {formatCell(props.cell, !!props.signed)}
@@ -113,11 +114,12 @@ export const PickPopup = (props: PickPopupProps) => (
       </table>
     </Show>
 
-    <Show when={props.isAnimating}>
-      <p class="pick-popup-footnote animating">
-        Only the layer on screen updates while playing — pause to read the rest.
-      </p>
-    </Show>
+    {/* Always in the layout, merely invisible when idle: showing and hiding it
+        would resize a popup anchored to its bottom edge, so the whole readout
+        would jump every time playback started or stopped. */}
+    <p class="pick-popup-footnote animating" classList={{ hidden: !props.isAnimating }}>
+      Playing — only the layer on screen updates.
+    </p>
 
     <p class="pick-popup-footnote">
       All values °C, read back from the map colors — roughly ±0.1 °C, less

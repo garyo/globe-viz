@@ -1756,12 +1756,19 @@ h1 {
     display: inline-block;
 }
 
+/* The bar is present on every cell, coloured only where there's a value. Sizing
+   it unconditionally keeps row heights fixed: cells flip between numbers and
+   marks constantly during playback, and a bar that came and went would resize
+   the table under a popup anchored to its bottom edge. */
 .pick-popup-table .swatch::after {
     content: '';
     display: block;
     height: 3px;
     margin-top: 2px;
     border-radius: 1px;
+}
+
+.pick-popup-table .swatch.colored::after {
     background: var(--swatch);
     box-shadow: 0 0 0 0.5px var(--border-strong);
 }
@@ -1776,6 +1783,11 @@ h1 {
 
 .pick-popup-footnote.animating {
     color: var(--accent);
+}
+
+/* visibility, not display — the slot must keep its height. */
+.pick-popup-footnote.hidden {
+    visibility: hidden;
 }
 
 /* Keep clear of the transport bar pinned to the bottom of the viewport. */
