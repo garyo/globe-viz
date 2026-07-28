@@ -216,6 +216,7 @@ export const AppLoader: Component = () => {
           region: appState.region,
           trendsMode: appState.trendsMode,
           currentDate: appState.availableDates[appState.currentDateIndex],
+          loopStartDate: appState.loopStartDate,
         });
       });
 

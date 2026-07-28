@@ -7,6 +7,8 @@ import {
   selectableDates,
   currentSelectableIndex,
   setSelectableIndex,
+  loopStartIndex,
+  getCurrentDate,
 } from '../stores/appState';
 import { isMobile } from '../lib/helpers/responsiveness-client';
 import { Toggle } from './controls/Toggle';
@@ -62,12 +64,20 @@ export const ControlPanel = () => {
   };
 
   const handleToggleAnimation = () => {
-    // If starting to play from the last frame, jump to beginning immediately
+    // If starting to play from the last frame, jump to the loop start
     if (!appState.isAnimating &&
         currentSelectableIndex() === selectableDates().length - 1) {
-      setSelectableIndex(0);
+      setSelectableIndex(loopStartIndex());
     }
     setAppState('isAnimating', !appState.isAnimating);
+  };
+
+  const handleSetLoopStart = () => {
+    setAppState('loopStartDate', getCurrentDate() ?? null);
+  };
+
+  const handleClearLoopStart = () => {
+    setAppState('loopStartDate', null);
   };
 
   const handleAnimationSpeedChange = (speed: number) => {
@@ -97,6 +107,7 @@ export const ControlPanel = () => {
             <DateSlider
               dates={selectableDates()}
               currentIndex={currentSelectableIndex()}
+              loopStartIndex={loopStartIndex()}
               onDateChange={handleDateChange}
               onStopAnimation={handleStopAnimation}
               disabled={appState.isLoading}
@@ -106,8 +117,11 @@ export const ControlPanel = () => {
               isAnimating={appState.isAnimating}
               animationSpeed={appState.animationSpeed}
               hasMultipleDates={hasMultipleDates()}
+              loopStartDate={appState.loopStartDate}
               onToggleAnimation={handleToggleAnimation}
               onSpeedChange={handleAnimationSpeedChange}
+              onSetLoopStart={handleSetLoopStart}
+              onClearLoopStart={handleClearLoopStart}
             />
 
             <RotationControls
@@ -153,6 +167,7 @@ export const ControlPanel = () => {
       <QuickDateSlider
         dates={selectableDates()}
         currentIndex={currentSelectableIndex()}
+        loopStartIndex={loopStartIndex()}
         isAnimating={appState.isAnimating}
         onDateChange={handleDateChange}
         onToggleAnimation={handleToggleAnimation}

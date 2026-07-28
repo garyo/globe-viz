@@ -2,39 +2,7 @@ import { Vector2 } from 'three';
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
-
-const DEG = Math.PI / 180;
-
-/**
- * Project (lat, lon) in degrees onto a sphere using the same convention as
- * the globe's SphereGeometry + UV mapping, so coastline overlays align with
- * the equirectangular data texture.
- *
- * Derivation:
- *   - Texture u=0..1 maps to lon 0..360°
- *   - Texture v=0..1 maps to lat -90..+90° (matplotlib `origin="lower"`)
- *   - Three.js SphereGeometry flips V internally (UV.v = 1 - iteration.v),
- *     so the south pole lands at -Y as expected.
- *
- *   x = -r * cos(lon_rad) * cos(lat_rad)
- *   y =  r * sin(lat_rad)
- *   z =  r * sin(lon_rad) * cos(lat_rad)
- */
-function pushSpherePoint(
-  positions: number[],
-  lat: number,
-  lon: number,
-  r: number,
-): void {
-  const latR = lat * DEG;
-  const lonR = lon * DEG;
-  const cosLat = Math.cos(latR);
-  positions.push(
-    -r * Math.cos(lonR) * cosLat,
-    r * Math.sin(latR),
-    r * Math.sin(lonR) * cosLat,
-  );
-}
+import { latLonToSpherePoint } from './geo';
 
 interface GeoJSONFeature {
   geometry: {
@@ -100,8 +68,8 @@ export async function loadCoastlines(
       for (let i = 0; i + 1 < line.length; i++) {
         const [lon0, lat0] = line[i];
         const [lon1, lat1] = line[i + 1];
-        pushSpherePoint(positions, lat0, lon0, options.radius);
-        pushSpherePoint(positions, lat1, lon1, options.radius);
+        positions.push(...latLonToSpherePoint({ lat: lat0, lon: lon0 }, options.radius));
+        positions.push(...latLonToSpherePoint({ lat: lat1, lon: lon1 }, options.radius));
       }
     }
   }

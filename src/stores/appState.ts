@@ -179,6 +179,14 @@ export interface AssetSlot {
   source: SourceId | null;  // tracks which source this slot was loaded for
 }
 
+/** A point on the globe the user clicked, in the texture's lon convention
+ * (lat -90..90, lon 0..360). Geographic rather than screen-space so it stays
+ * put across rotation, zoom, and date changes. */
+export interface PickedPoint {
+  lat: number;
+  lon: number;
+}
+
 export interface AppState {
   // Active top-level tab
   activeTab: TabId;
@@ -228,6 +236,16 @@ export interface AppState {
   currentDateIndex: number;  // Index into availableDates array
   isAnimating: boolean;      // Whether animation is playing
   animationSpeed: number;    // Animation speed in milliseconds between frames
+
+  // Date playback wraps back to here instead of to the first date, letting the
+  // user replay one event. Held as a date string, not an index, because
+  // selectableDates() changes shape on source/dataset switch and on the hourly
+  // index refresh — an index would silently drift onto a different day.
+  // Shared via the URL (?from=), never persisted to localStorage.
+  loopStartDate: string | null;
+
+  // Globe point the user clicked, or null when no readout is open. Transient.
+  pickedPoint: PickedPoint | null;
 
   // Trends tab: region selection. `availableRegions` mirrors the per-load
   // index.json's timeseries.regions[] (not persisted); `region` is the user's
@@ -301,6 +319,8 @@ const initialState: AppState = {
   currentDateIndex: 0,
   isAnimating: false,
   animationSpeed: 100, // 100ms between frames (10 fps)
+  loopStartDate: null,
+  pickedPoint: null,
   region: 'global',
   availableRegions: ['global'],
   trendsMode: 'single',
@@ -629,6 +649,36 @@ export function currentSelectableIndex(): number {
     if (dates[k] <= cur) return k;
   }
   return 0;
+}
+
+/** Index within selectableDates() where playback restarts: the first date at or
+ * after loopStartDate. Falls back to 0 when no loop start is set, or when the
+ * marker sits past the end of the current selection (e.g. after switching to a
+ * source that lags behind it) — better to replay the whole range than to trap
+ * playback on a single frame. */
+export function loopStartIndex(): number {
+  const from = appState.loopStartDate;
+  if (!from) return 0;
+  const dates = selectableDates();
+  const i = dates.findIndex((d) => d >= from);
+  return i >= 0 ? i : 0;
+}
+
+/** The frame after `i`, wrapping to the loop start rather than to the first
+ * date. Both the playback advance and its texture prefetch go through here —
+ * if they ever disagree, the wrap stalls waiting on a texture nobody fetched. */
+export function nextSelectableIndex(i: number): number {
+  const dates = selectableDates();
+  if (dates.length === 0) return 0;
+  return i + 1 >= dates.length ? loopStartIndex() : i + 1;
+}
+
+/** Drop the loop marker on the current date, or pick it back up if it's already
+ * there. Shared by the Options-panel button and the `L` shortcut. */
+export function toggleLoopStartAtCurrentDate(): void {
+  const current = getCurrentDate();
+  if (!current) return;
+  setAppState('loopStartDate', appState.loopStartDate === current ? null : current);
 }
 
 /** Move the current date to selectableDates()[i] (clamped), translating to the

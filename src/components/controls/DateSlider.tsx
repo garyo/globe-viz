@@ -1,24 +1,17 @@
 import { Show } from 'solid-js';
+import { formatDate } from '../../lib/helpers/dates';
+import { LoopStartTick, trackFraction } from './LoopStartTick';
 
 interface DateSliderProps {
   dates: string[];
   currentIndex: number;
+  loopStartIndex: number;
   onDateChange: (index: number) => void;
   onStopAnimation?: () => void;
   disabled?: boolean;
 }
 
 export const DateSlider = (props: DateSliderProps) => {
-  const formatDate = (dateStr: string) => {
-    // Format YYYY-MM-DD to a more readable format
-    const date = new Date(dateStr + 'T00:00:00');
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    });
-  };
-
   return (
     <Show when={props.dates.length > 0}>
       <div class="control-row">
@@ -28,18 +21,24 @@ export const DateSlider = (props: DateSliderProps) => {
             {formatDate(props.dates[props.currentIndex] || props.dates[0])}
           </span>
         </label>
-        <input
-          type="range"
-          class="control-slider"
-          min={0}
-          max={props.dates.length - 1}
-          step={1}
-          value={props.currentIndex}
-          disabled={props.disabled || props.dates.length <= 1}
-          onMouseDown={() => props.onStopAnimation?.()}
-          onTouchStart={() => props.onStopAnimation?.()}
-          onInput={(e) => props.onDateChange(parseInt(e.currentTarget.value))}
-        />
+        <div class="slider-track">
+          <input
+            type="range"
+            class="control-slider"
+            min={0}
+            max={props.dates.length - 1}
+            step={1}
+            value={props.currentIndex}
+            disabled={props.disabled || props.dates.length <= 1}
+            onMouseDown={() => props.onStopAnimation?.()}
+            onTouchStart={() => props.onStopAnimation?.()}
+            onInput={(e) => props.onDateChange(parseInt(e.currentTarget.value))}
+          />
+          <LoopStartTick
+            fraction={trackFraction(props.loopStartIndex, props.dates.length)}
+            label={`Playback loops back to ${formatDate(props.dates[props.loopStartIndex] ?? props.dates[0])}`}
+          />
+        </div>
         <div class="date-range-labels">
           <span class="date-label-start">{formatDate(props.dates[0])}</span>
           <span class="date-label-end">{formatDate(props.dates[props.dates.length - 1])}</span>

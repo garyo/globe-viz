@@ -48,6 +48,18 @@ export const About = () => {
           <li>Auto-rotate and zoom via interactive camera controls</li>
           <li>Horizontal mouse wheel to rotate the globe left/right</li>
           <li>
+            Click any point on the globe to read its coordinates, place name,
+            and every source's value there for the current date. Values are
+            recovered from the map colors, so they're approximate (±0.1 °C
+            typically) and are shown as a bound where the color scale clips.
+            Place names come from bundled Natural Earth outlines, refined for
+            land points by{' '}
+            <a href="https://www.bigdatacloud.com/" target="_blank" rel="noopener noreferrer">
+              BigDataCloud
+            </a>
+            's free reverse geocoder — which receives the clicked coordinates.
+          </li>
+          <li>
             <strong>Keyboard Shortcuts (Globe tab):</strong>
             <ul style="margin-top: 0.5em;">
               <li><strong>Spacebar</strong> — Play/Pause animation</li>
@@ -56,6 +68,8 @@ export const About = () => {
               <li><strong>A</strong> — Toggle Actual / Anomaly (hold to peek, release to snap back)</li>
               <li><strong>V</strong> — Switch variable (sea / air temperature)</li>
               <li><strong>S</strong> — Switch data source (OISST / ERA5)</li>
+              <li><strong>L</strong> — Loop playback from the current date (press again to clear)</li>
+              <li><strong>Esc</strong> — Close the point readout</li>
               <li><strong>?</strong> — Open this About tab</li>
             </ul>
           </li>

@@ -12,6 +12,8 @@ import {
   selectableDates,
   currentSelectableIndex,
   setSelectableIndex,
+  loopStartIndex,
+  toggleLoopStartAtCurrentDate,
 } from '../stores/appState';
 
 export const KeyboardControls = () => {
@@ -48,10 +50,10 @@ export const KeyboardControls = () => {
           if (!onGlobeTab) return;
           e.preventDefault();
           if (selectableDates().length > 1) {
-            // If starting to play from the last frame, jump to beginning
+            // If starting to play from the last frame, jump to the loop start
             if (!appState.isAnimating &&
                 currentSelectableIndex() === selectableDates().length - 1) {
-              setSelectableIndex(0);
+              setSelectableIndex(loopStartIndex());
             }
             setAppState('isAnimating', !appState.isAnimating);
           }
@@ -77,6 +79,18 @@ export const KeyboardControls = () => {
           if (!onGlobeTab) return;
           e.preventDefault();
           setAppState('autoRotate', !appState.autoRotate);
+          break;
+
+        case 'l': // L - set/clear the playback loop start at the current date
+          if (!onGlobeTab) return;
+          e.preventDefault();
+          toggleLoopStartAtCurrentDate();
+          break;
+
+        case 'escape': // Escape - dismiss the point readout
+          if (!appState.pickedPoint) return;
+          e.preventDefault();
+          setAppState('pickedPoint', null);
           break;
 
         case 'a': { // A - toggle actual/anomaly (hold to peek)

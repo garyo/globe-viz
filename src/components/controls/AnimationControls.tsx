@@ -1,11 +1,15 @@
 import { Show, createMemo, createSignal } from 'solid-js';
+import { formatDate } from '../../lib/helpers/dates';
 
 interface AnimationControlsProps {
   isAnimating: boolean;
   animationSpeed: number; // in milliseconds
   hasMultipleDates: boolean;
+  loopStartDate: string | null;
   onToggleAnimation: () => void;
   onSpeedChange: (speed: number) => void; // expects milliseconds
+  onSetLoopStart: () => void;
+  onClearLoopStart: () => void;
 }
 
 export const AnimationControls = (props: AnimationControlsProps) => {
@@ -46,6 +50,33 @@ export const AnimationControls = (props: AnimationControlsProps) => {
             style={{ flex: '1' }}
           />
         </label>
+      </div>
+
+      <div class="control-row loop-start-controls">
+        <span class="control-label-text">
+          ⟲ Loop from:{' '}
+          <span class="control-value" classList={{ active: !!props.loopStartDate }}>
+            {props.loopStartDate ? formatDate(props.loopStartDate) : 'first date'}
+          </span>
+        </span>
+        <div class="loop-start-buttons">
+          <button
+            class="control-button"
+            onClick={props.onSetLoopStart}
+            title="Replay from the current date instead of the beginning (L)"
+          >
+            Set to current
+          </button>
+          <button
+            class="control-button icon"
+            onClick={props.onClearLoopStart}
+            disabled={!props.loopStartDate}
+            title="Clear the loop start"
+            aria-label="Clear the loop start"
+          >
+            ×
+          </button>
+        </div>
       </div>
     </Show>
   );

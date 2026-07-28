@@ -1547,6 +1547,79 @@ h1 {
     min-width: 60px;
 }
 
+/* Playback loop start ---------------------------------------------------- */
+
+.loop-start-controls {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.control-label-text {
+    font-size: 12px;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+.control-value.active {
+    color: var(--accent);
+}
+
+.loop-start-buttons {
+    display: flex;
+    gap: 6px;
+}
+
+.control-button.icon {
+    min-width: 28px;
+    padding: 0;
+    font-size: 16px;
+    line-height: 1;
+}
+
+.control-button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Wraps a date range input so the loop marker can be drawn over its track.
+   `--thumb-size` must match the slider's thumb — the marker is inset by half a
+   thumb at each end so it aligns with where the thumb actually centers. */
+.slider-track {
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    --thumb-size: 14px;
+}
+
+.slider-track > input[type="range"] {
+    flex: 1;
+    min-width: 0;
+}
+
+.loop-start-tick {
+    position: absolute;
+    top: 50%;
+    left: calc(var(--tick-pct) * (100% - var(--thumb-size)) + var(--thumb-size) / 2);
+    width: 2px;
+    height: 14px;
+    margin-left: -1px;
+    transform: translateY(-50%);
+    background: var(--accent);
+    border-radius: 1px;
+    pointer-events: none;
+}
+
+.quick-date-slider .slider-track {
+    --thumb-size: 18px;
+}
+
+.quick-date-slider .loop-start-tick {
+    height: 18px;
+}
+
 @media screen and (max-width: 768px) {
     .control-panel {
         max-width: calc(100vw - 20px);
@@ -1556,6 +1629,165 @@ h1 {
 /* =========================================================================
    Missing-date indicator (overlay on the globe scene)
    ========================================================================= */
+
+/* =========================================================================
+   Point readout (click-to-inspect popup on the globe scene)
+   ========================================================================= */
+
+.pick-popup {
+    position: absolute;
+    left: 0.75rem;
+    bottom: 56px;   /* clears the quick date slider pinned to the viewport bottom */
+    z-index: 18;
+    width: min(320px, calc(100vw - 1.5rem));
+    max-height: min(60vh, 460px);
+    overflow-y: auto;
+    padding: 10px 12px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--bg-panel) 72%, transparent);
+    backdrop-filter: blur(10px);
+    box-shadow: var(--shadow);
+    color: var(--text-primary);
+    font-size: 12px;
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.18s ease-out, transform 0.18s ease-out;
+}
+
+.pick-popup.open {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.pick-popup-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.pick-popup-title {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+
+.pick-popup-place {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.pick-popup-place.unknown {
+    color: var(--text-tertiary);
+    font-weight: 400;
+}
+
+.pick-popup-coords {
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+.pick-popup-close {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 3px;
+    color: var(--text-secondary);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.pick-popup-close:hover {
+    background: var(--button-bg);
+    color: var(--text-primary);
+}
+
+.pick-popup-date {
+    margin-top: 6px;
+    color: var(--text-tertiary);
+}
+
+.pick-popup-table {
+    width: 100%;
+    margin-top: 8px;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+}
+
+.pick-popup-table thead th {
+    padding: 4px 0 4px 10px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-tertiary);
+    font-size: 10px;
+    font-weight: 500;
+    text-align: right;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.pick-popup-table tbody th {
+    padding: 3px 0;
+    color: var(--text-secondary);
+    font-weight: 400;
+    text-align: left;
+}
+
+.pick-popup-table td {
+    padding: 3px 0 3px 10px;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.pick-popup-table td.muted {
+    color: var(--text-tertiary);
+}
+
+/* Underline each reading in its own colormap color, tying the number back to
+   the globe. Drawn as a pseudo-element rather than a border so the hairline can
+   ring the bar instead of capping it — without that ring, pale swatches vanish
+   (white sits mid-ramp on the SST map, and near-zero anomalies are near-white). */
+.pick-popup-table .swatch {
+    display: inline-block;
+}
+
+.pick-popup-table .swatch::after {
+    content: '';
+    display: block;
+    height: 3px;
+    margin-top: 2px;
+    border-radius: 1px;
+    background: var(--swatch);
+    box-shadow: 0 0 0 0.5px var(--border-strong);
+}
+
+.pick-popup-empty,
+.pick-popup-footnote {
+    margin: 8px 0 0;
+    color: var(--text-tertiary);
+    font-size: 10px;
+    line-height: 1.4;
+}
+
+.pick-popup-footnote.animating {
+    color: var(--accent);
+}
+
+/* Keep clear of the transport bar pinned to the bottom of the viewport. */
+@media screen and (max-width: 768px) {
+    .pick-popup {
+        left: 0.5rem;
+        right: 0.5rem;
+        bottom: 64px;
+        width: auto;
+        max-height: 45vh;
+    }
+}
 
 .missing-date-indicator {
     position: absolute;
@@ -1688,5 +1920,13 @@ h1 {
     .quick-slider::-moz-range-thumb {
         width: 24px;
         height: 24px;
+    }
+
+    .quick-date-slider .slider-track {
+        --thumb-size: 24px;
+    }
+
+    .quick-date-slider .loop-start-tick {
+        height: 22px;
     }
 }

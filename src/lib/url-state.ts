@@ -8,6 +8,7 @@
  *   - region     — global, nino_3_4, ... (only meaningful on Trends)
  *   - mode       — single | grid       (only meaningful on Trends)
  *   - date       — YYYY-MM-DD          (only meaningful on Globe)
+ *   - from       — YYYY-MM-DD          playback loop start (Globe only)
  *
  * URL > localStorage > defaults. Writes use history.replaceState so the
  * URL bar updates in place without leaking the data-state churn into the
@@ -64,6 +65,11 @@ export function readUrlState(): Partial<AppState> & { pendingUrlDate?: string } 
   const date = p.get('date');
   if (date && DATE_RE.test(date)) out.pendingUrlDate = date;
 
+  // Unlike `date`, the loop start needs no resolution against availableDates —
+  // loopStartIndex() resolves it lazily on every wrap.
+  const from = p.get('from');
+  if (from && DATE_RE.test(from)) out.loopStartDate = from;
+
   return out;
 }
 
@@ -87,6 +93,7 @@ interface UrlStateInput {
   region: string;
   trendsMode: 'single' | 'grid';
   currentDate?: string;
+  loopStartDate?: string | null;
 }
 
 /**
@@ -109,6 +116,7 @@ export function writeUrlState(s: UrlStateInput): void {
     if (s.region && s.region !== 'global') p.set('region', s.region);
   } else if (s.activeTab === 'globe') {
     if (s.currentDate) p.set('date', s.currentDate);
+    if (s.loopStartDate) p.set('from', s.loopStartDate);
   }
   const url = `${window.location.pathname}?${p.toString()}${window.location.hash}`;
   // replaceState rather than pushState so dragging the date slider doesn't
