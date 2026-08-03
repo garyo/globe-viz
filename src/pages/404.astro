@@ -1,0 +1,70 @@
+---
+import '../styles/global.css';
+---
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Not found — Climate Data Explorer</title>
+    <meta name="robots" content="noindex" />
+
+    <!-- Cloudflare serves this file, with a real 404 status, for any path that
+         is not a file in the build — which is why this page has to exist at
+         all: without it every mistyped or probed URL answered 200 with the app.
+         The marker tells the analytics snippet below that this is not a page,
+         so they all report as one /404 rather than one page each. -->
+    <meta name="featherstat:missing" content="1" />
+
+    <!-- Kept in step with index.astro. -->
+    <script is:inline>
+      if (location.hostname === 'globe-viz.oberbrunner.com') {
+        import('https://analytics.oberbrunner.com/tracker.js').then(
+          ({ init, page }) => {
+            init({
+              site: 3,
+              endpoint: 'https://analytics.oberbrunner.com/api/collect',
+              autoPageviews: false,
+            });
+            const missing =
+              document.querySelector('meta[name="featherstat:missing"]') !==
+                null ||
+              (location.pathname !== '/' &&
+                location.pathname !== '/index.html');
+            missing
+              ? page(new URL('/404', location.origin).href, document.title, {
+                  missing: location.pathname.slice(0, 200),
+                })
+              : page();
+          },
+        );
+      }
+    </script>
+
+    <style>
+      .nf {
+        display: flex;
+        min-height: 100vh;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1rem;
+        text-align: center;
+        padding: 2rem;
+        font-family: system-ui, sans-serif;
+      }
+      .nf p {
+        max-width: 32rem;
+        opacity: 0.8;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="nf">
+      <h1>Page not found</h1>
+      <p>That address doesn't match anything here.</p>
+      <p><a href="/">Go to the Climate Data Explorer</a></p>
+    </main>
+  </body>
+</html>

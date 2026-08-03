@@ -30,20 +30,40 @@ import '../styles/global.css';
     <meta name="twitter:image" content="https://globe-viz.oberbrunner.com/og-image-20251011.jpg">
     <meta name="twitter:image:alt" content="Stylized view of global sea surface temperature data with controls for anomalies and trends.">
 
-    <!-- Matomo analytics; cookie-less, prod hostname only -->
+    <!-- featherstat analytics; cookie-less, prod hostname only. Dynamic import
+         so the module is never even fetched off production. Views are announced
+         here rather than by the tracker's history hook: this site rewrites the
+         URL as its own state changes (lib/url-state.ts), which is one page
+         being explored, not a series of page views. -->
     <script is:inline>
       if (location.hostname === 'globe-viz.oberbrunner.com') {
-        var _paq = (window._paq = window._paq || []);
-        _paq.push(['disableCookies']);
-        _paq.push(['enableHeartBeatTimer', 15]);
-        _paq.push(['trackPageView']);
-        _paq.push(['enableLinkTracking']);
-        _paq.push(['setTrackerUrl', 'https://analytics.oberbrunner.com/matomo.php']);
-        _paq.push(['setSiteId', '3']);
-        var mg = document.createElement('script');
-        mg.async = true;
-        mg.src = 'https://analytics.oberbrunner.com/matomo.js';
-        document.head.appendChild(mg);
+        import('https://analytics.oberbrunner.com/tracker.js').then(
+          ({ init, page }) => {
+            init({
+              site: 3,
+              endpoint: 'https://analytics.oberbrunner.com/api/collect',
+              autoPageviews: false,
+            });
+            // A page that does not exist reports as one canonical /404 carrying
+            // the URL that was asked for, so a mistyped or probed link stays
+            // findable as a prop instead of becoming a page of its own.
+            //
+            // Two ways of knowing, because this site is one page and the host
+            // is not yet known to serve a real 404: the marker is the 404 page
+            // announcing itself, and the path check still catches a bad URL
+            // while the host answers 200 with the app. Either way, one report.
+            const missing =
+              document.querySelector('meta[name="featherstat:missing"]') !==
+                null ||
+              (location.pathname !== '/' &&
+                location.pathname !== '/index.html');
+            missing
+              ? page(new URL('/404', location.origin).href, document.title, {
+                  missing: location.pathname.slice(0, 200),
+                })
+              : page();
+          },
+        );
       }
     </script>
 
