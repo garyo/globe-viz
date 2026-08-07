@@ -473,13 +473,37 @@ function buildOption(
       max: 'dataMax',
     },
     dataZoom: [
-      // Native wheel zoom disabled — we handle it ourselves so we can
-      // tame sensitivity and anchor the zoom on the cursor. moveOnMouseMove
-      // (drag-to-pan) stays enabled.
-      { type: 'inside', xAxisIndex: 0, zoomOnMouseWheel: false, moveOnMouseWheel: false },
+      // Native wheel and pinch zoom both disabled — we handle them ourselves so
+      // we can tame sensitivity and anchor the zoom on the cursor/fingers.
+      // moveOnMouseMove (drag-to-pan) stays enabled.
+      //
+      // zoomLock is what unregisters the pinch: it downgrades the roam
+      // controller to 'move' (echarts/component/dataZoom/roams.js), which
+      // leaves the drag-to-pan listeners attached but drops the pinch one.
+      // It does not constrain us — zoomLock is documented as an interaction
+      // constraint only, and dispatchAction still resizes the window freely
+      // (see the comment in echarts/component/dataZoom/AxisProxy.js).
+      //
+      // filterMode 'none' on every zoom that touches an axis. ECharts defaults
+      // to 'filter', which physically removes out-of-window points from the
+      // series rather than just narrowing the axis — so the segment joining the
+      // last visible point to its off-screen neighbour has no endpoint left to
+      // draw to and every line stops short of the edge. On the y zoom it is
+      // worse than cosmetic: a line dipping below the window loses those points
+      // and is redrawn straight across the gap, which misstates the data.
+      // 'none' moves the window only; series clip:true still clips at the grid.
+      {
+        type: 'inside',
+        xAxisIndex: 0,
+        zoomOnMouseWheel: false,
+        moveOnMouseWheel: false,
+        zoomLock: true,
+        filterMode: 'none',
+      },
       {
         type: 'slider',
         xAxisIndex: 0,
+        filterMode: 'none',
         height: compact ? 14 : 20,
         bottom: compact ? 6 : 30,
         textStyle: { color: c.text },
@@ -487,7 +511,14 @@ function buildOption(
         fillerColor: c.grid,
         backgroundColor: 'transparent',
       },
-      { type: 'inside', yAxisIndex: 0, zoomOnMouseWheel: false, moveOnMouseWheel: false },
+      {
+        type: 'inside',
+        yAxisIndex: 0,
+        zoomOnMouseWheel: false,
+        moveOnMouseWheel: false,
+        zoomLock: true,
+        filterMode: 'none',
+      },
     ],
     // compact: a single legend row under the title, where it can't cover the
     // data. Otherwise a floating box at the lower-left of the plot, clear of
@@ -532,6 +563,8 @@ export const Trends = () => {
   let resizeHandler: (() => void) | undefined;
   let wheelHandler: ((e: WheelEvent) => void) | undefined;
   let cursorHandler: ((e: MouseEvent) => void) | undefined;
+  let pinchMoveHandler: ((e: TouchEvent) => void) | undefined;
+  let pinchEndHandler: ((e: TouchEvent) => void) | undefined;
   let hoverRaf = 0; // pending requestAnimationFrame id for the hover resolver
   // Circle drawn where the cursor's time crosses the highlighted line — added
   // directly to zrender (not via setOption) so it can be repositioned every
@@ -607,11 +640,21 @@ export const Trends = () => {
     // dz.endValue, so nothing drifts.
     const ZOOM_PER_DELTA = 0.001; // exp(deltaY * k) ≈ 10% range change per wheel notch (deltaY=100)
 
-    const zoomAxis = (
+    // The inside dataZoom index for an axis, plus the window it currently
+    // renders, in axis-value space.
+    //
+    // The extent comes from the axis's rendered scale (what the user actually
+    // sees) rather than dataZoom.startValue/endValue. With `scale: true` on the
+    // y-axis, ECharts pads the rendered range slightly beyond the dataZoom range
+    // (e.g. visible [19.5, 21.3] when dataZoom maps 0-100% → [19.65, 21.17]).
+    // On the very first dispatchAction that padding evaporates, and a 10% zoom
+    // math step would look like a 25% visual jump. Anchoring on the rendered
+    // extent makes every step shrink the visible window by the same fraction,
+    // and dispatching with startValue/endValue then sets the next rendered
+    // extent exactly.
+    const axisWindow = (
       axis: 'x' | 'y',
-      mouseDataVal: number,
-      factor: number,
-    ): { startValue: number; endValue: number; index: number } | null => {
+    ): { index: number; sv: number; ev: number } | null => {
       if (!chart) return null;
       const axisKey = axis === 'y' ? 'yAxisIndex' : 'xAxisIndex';
       const opt = chart.getOption() as {
@@ -621,21 +664,11 @@ export const Trends = () => {
           yAxisIndex?: number;
         }>;
       };
-      const zooms = opt.dataZoom ?? [];
-      const dzIdx = zooms.findIndex(
-        (z) => z.type === 'inside' && z[axisKey as 'xAxisIndex' | 'yAxisIndex'] === 0,
+      const index = (opt.dataZoom ?? []).findIndex(
+        (z) => z.type === 'inside' && z[axisKey] === 0,
       );
-      if (dzIdx < 0) return null;
+      if (index < 0) return null;
 
-      // Use the axis's rendered extent (what the user actually sees) rather
-      // than dataZoom.startValue/endValue. With `scale: true` on the y-axis,
-      // ECharts pads the rendered range slightly beyond the dataZoom range
-      // (e.g. visible [19.5, 21.3] when dataZoom maps 0-100% → [19.65, 21.17]).
-      // On the very first dispatchAction that padding evaporates, and a 10%
-      // zoom math step would look like a 25% visual jump. Anchoring on the
-      // rendered extent makes every wheel notch shrink the visible window
-      // by the same fraction, and dispatching with startValue/endValue then
-      // sets the next rendered extent exactly.
       const axisModel = (chart as unknown as {
         getModel: () => {
           getComponent: (n: string, i: number) => {
@@ -645,8 +678,28 @@ export const Trends = () => {
       }).getModel().getComponent(axis === 'y' ? 'yAxis' : 'xAxis', 0);
       const extent = axisModel?.axis.scale.getExtent();
       if (!extent || extent[1] === extent[0]) return null;
-      const sv = extent[0];
-      const ev = extent[1];
+      return { index, sv: extent[0], ev: extent[1] };
+    };
+
+    // Pixel coordinate of a value along its own axis. The current window's
+    // endpoints map to the grid's edges, which is how the pinch solver below
+    // recovers the grid geometry without digging into the layout.
+    const pixelOfValue = (axis: 'x' | 'y', v: number): number => {
+      const px = chart!.convertToPixel(
+        { gridIndex: 0 },
+        axis === 'x' ? [v, 0] : [0, v],
+      ) as [number, number];
+      return axis === 'x' ? px[0] : px[1];
+    };
+
+    const zoomAxis = (
+      axis: 'x' | 'y',
+      mouseDataVal: number,
+      factor: number,
+    ): { startValue: number; endValue: number; index: number } | null => {
+      const w = axisWindow(axis);
+      if (!w) return null;
+      const { sv, ev, index: dzIdx } = w;
       const range = ev - sv;
 
       // Mouse fraction within the visible window. Clamp so cursors slightly
@@ -670,30 +723,13 @@ export const Trends = () => {
       deltaPx: number,
     ): { startValue: number; endValue: number; index: number } | null => {
       if (!chart) return null;
-      const opt = chart.getOption() as {
-        dataZoom?: Array<{ type?: string; xAxisIndex?: number }>;
-      };
-      const dzIdx = (opt.dataZoom ?? []).findIndex(
-        (z) => z.type === 'inside' && z.xAxisIndex === 0,
-      );
-      if (dzIdx < 0) return null;
-
-      const axisModel = (chart as unknown as {
-        getModel: () => {
-          getComponent: (n: string, i: number) => {
-            axis: { scale: { getExtent: () => [number, number] } };
-          } | undefined;
-        };
-      }).getModel().getComponent('xAxis', 0);
-      const extent = axisModel?.axis.scale.getExtent();
-      if (!extent || extent[1] === extent[0]) return null;
-      const [sv, ev] = extent;
+      const w = axisWindow('x');
+      if (!w) return null;
+      const { sv, ev, index: dzIdx } = w;
       const range = ev - sv;
 
       // Pixel delta → data delta so a notch pans the content 1:1 with the wheel.
-      const pxStart = (chart.convertToPixel({ gridIndex: 0 }, [sv, 0]) as [number, number])[0];
-      const pxEnd = (chart.convertToPixel({ gridIndex: 0 }, [ev, 0]) as [number, number])[0];
-      const gridPxWidth = Math.abs(pxEnd - pxStart) || 1;
+      const gridPxWidth = Math.abs(pixelOfValue('x', ev) - pixelOfValue('x', sv)) || 1;
       const deltaData = (deltaPx / gridPxWidth) * range;
 
       let nsv = sv + deltaData;
@@ -766,6 +802,162 @@ export const Trends = () => {
       }
     };
     chartRef.addEventListener('wheel', wheelHandler, { capture: true, passive: false });
+
+    // Two-finger zoom. ECharts' own pinch is unusable at any real zoom level:
+    // RoamController throws the pinch magnitude away and applies a flat ±10%
+    // per touchmove event (`scale = e.pinchScale > 1 ? 1.1 : 1/1.1`), so a
+    // half-second of finger drift compounds to 1.1^30 ≈ 17×. It is disabled
+    // via zoomLock on the inside zooms; this replaces it.
+    //
+    // We solve instead for the window that keeps the data under each finger
+    // pinned to that finger. Independent x and y zooms make that exactly
+    // determined: two fingers give four pixel coordinates, and the two windows
+    // have four unknowns (a scale and an offset each). Panning is not a
+    // separate mode — fingers moving together leave the scales untouched and
+    // the offsets follow, so the content simply tracks the gesture.
+    //
+    // Everything is measured against values captured at gesture start rather
+    // than accumulated frame to frame, so a frame that ECharts clamps (at the
+    // data edge, or against the zoom limit below) cannot drift: reverse the
+    // gesture and the content comes back under the fingers exactly.
+    const PINCH_MIN_SEP_PX = 36; // below this an axis can't be scaled meaningfully
+    const PINCH_MAX_GESTURE_ZOOM = 20; // bound on one gesture's total scale change
+
+    type PinchAnchor = {
+      ids: [number, number];
+      px: [number, number]; // finger pixels at gesture start
+      py: [number, number];
+      dx: [number, number]; // data values under those pixels at gesture start
+      dy: [number, number];
+      xRange: number; // window widths at gesture start
+      yRange: number;
+    };
+    let pinch: PinchAnchor | undefined;
+
+    // Rect is passed in, not re-read per finger: this runs on every touchmove
+    // frame and getBoundingClientRect forces layout.
+    const fingerPixels = (t: Touch, rect: DOMRect): [number, number] => [
+      t.clientX - rect.left,
+      t.clientY - rect.top,
+    ];
+
+    const capturePinch = (a: Touch, b: Touch, rect: DOMRect) => {
+      pinch = undefined;
+      if (!chart) return;
+      const xw = axisWindow('x');
+      const yw = axisWindow('y');
+      if (!xw || !yw) return;
+      const pa = fingerPixels(a, rect);
+      const pb = fingerPixels(b, rect);
+      const da = chart.convertFromPixel({ gridIndex: 0 }, pa) as [number, number];
+      const db = chart.convertFromPixel({ gridIndex: 0 }, pb) as [number, number];
+      pinch = {
+        ids: [a.identifier, b.identifier],
+        px: [pa[0], pb[0]],
+        py: [pa[1], pb[1]],
+        dx: [da[0], db[0]],
+        dy: [da[1], db[1]],
+        xRange: xw.ev - xw.sv,
+        yRange: yw.ev - yw.sv,
+      };
+    };
+
+    // Window that puts the anchor values back under the fingers now holding
+    // them. The axis maps linearly onto a fixed pixel span, so with g0 = the
+    // pixel of the window start and gSpan = the pixel of the window end minus
+    // g0 (negative on y, which grows downward — the algebra is sign-agnostic):
+    //     range = (a1 - a0) * gSpan / (q1 - q0)
+    //
+    // Fingers close together *along this axis* drive that denominator toward
+    // zero and the range toward infinity, which is the runaway to avoid: a
+    // near-vertical pinch says almost nothing about the horizontal scale.
+    // Under PINCH_MIN_SEP_PX we hold the width from gesture start and pin the
+    // midpoint instead, so a vertical pinch reads as "zoom y, pan x".
+    const solvePinchAxis = (
+      axis: 'x' | 'y',
+      [a0, a1]: [number, number],
+      [p0, p1]: [number, number],
+      q0: number,
+      q1: number,
+      startRange: number,
+    ): { startValue: number; endValue: number; index: number } | null => {
+      const w = axisWindow(axis);
+      if (!w) return null;
+      const g0 = pixelOfValue(axis, w.sv);
+      const gSpan = pixelOfValue(axis, w.ev) - g0;
+      if (!gSpan) return null;
+
+      const scalable =
+        Math.abs(q1 - q0) >= PINCH_MIN_SEP_PX && Math.abs(p1 - p0) >= PINCH_MIN_SEP_PX;
+      // abs(): if the fingers cross over on this axis the raw range flips sign,
+      // which would mirror the axis. Clamping the magnitude keeps it sane.
+      const raw = scalable ? Math.abs(((a1 - a0) * gSpan) / (q1 - q0)) : startRange;
+      const range = Math.min(
+        Math.max(raw, startRange / PINCH_MAX_GESTURE_ZOOM),
+        startRange * PINCH_MAX_GESTURE_ZOOM,
+      );
+
+      const anchorVal = scalable ? a0 : (a0 + a1) / 2;
+      const anchorPx = scalable ? q0 : (q0 + q1) / 2;
+      const sv = anchorVal - ((anchorPx - g0) / gSpan) * range;
+      return { startValue: sv, endValue: sv + range, index: w.index };
+    };
+
+    pinchMoveHandler = (e: TouchEvent) => {
+      if (!chart) return;
+
+      if (e.touches.length < 2) {
+        // Tail of a pinch, one finger still down. zrender's drag origin is
+        // stale — its pan bails out on every frame the gesture was recognized
+        // as a pinch, so it never tracked those moves — and letting this
+        // through would jump the view by the accumulated difference. Swallow
+        // until every finger lifts.
+        if (pinch) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
+
+      const a = e.touches[0];
+      const b = e.touches[1];
+      const rect = chartRef!.getBoundingClientRect();
+      if (!pinch || pinch.ids[0] !== a.identifier || pinch.ids[1] !== b.identifier) {
+        capturePinch(a, b, rect); // first frame, or a finger was added/lifted
+      }
+      if (!pinch) return;
+      e.preventDefault();
+
+      const qa = fingerPixels(a, rect);
+      const qb = fingerPixels(b, rect);
+      const xz = solvePinchAxis('x', pinch.dx, pinch.px, qa[0], qb[0], pinch.xRange);
+      const yz = solvePinchAxis('y', pinch.dy, pinch.py, qa[1], qb[1], pinch.yRange);
+      // Dispatched separately, not batched — see the wheel handler's note.
+      if (xz) {
+        chart.dispatchAction({
+          type: 'dataZoom',
+          dataZoomIndex: xz.index,
+          startValue: xz.startValue,
+          endValue: xz.endValue,
+        });
+      }
+      if (yz) {
+        chart.dispatchAction({
+          type: 'dataZoom',
+          dataZoomIndex: yz.index,
+          startValue: yz.startValue,
+          endValue: yz.endValue,
+        });
+      }
+    };
+
+    pinchEndHandler = (e: TouchEvent) => {
+      if (e.touches.length === 0) pinch = undefined;
+    };
+
+    chartRef.addEventListener('touchmove', pinchMoveHandler, { capture: true, passive: false });
+    chartRef.addEventListener('touchend', pinchEndHandler);
+    chartRef.addEventListener('touchcancel', pinchEndHandler);
 
     // Hide the native cursor only over the plot grid (the dashed crosshair
     // stands in for it there, so it never covers the point being read). The
@@ -879,6 +1071,13 @@ export const Trends = () => {
     }
     if (cursorHandler && chartRef) {
       chartRef.removeEventListener('mousemove', cursorHandler);
+    }
+    if (pinchMoveHandler && chartRef) {
+      chartRef.removeEventListener('touchmove', pinchMoveHandler, { capture: true });
+    }
+    if (pinchEndHandler && chartRef) {
+      chartRef.removeEventListener('touchend', pinchEndHandler);
+      chartRef.removeEventListener('touchcancel', pinchEndHandler);
     }
     if (hoverRaf) cancelAnimationFrame(hoverRaf);
     chart?.dispose();
@@ -1015,8 +1214,8 @@ export const Trends = () => {
           <span>Hover the chart to read the nearest year's value. Click any line to highlight
           that year (click again to clear). Drag the slider
           below the chart to zoom in time of year. Scroll inside the chart to zoom; shift-scroll
-          to pan. Use the Source and Dataset toggles in the header to switch between OISST/ERA5
-          and their available datasets.</span>
+          to pan; pinch to zoom and pan together on a touchscreen. Use the Source and Dataset
+          toggles in the header to switch between OISST/ERA5 and their available datasets.</span>
         </Show>
       </div>
     </div>

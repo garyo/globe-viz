@@ -859,6 +859,10 @@ body[data-trends-mode="grid"] .trends-grid-view { display: block; }
     flex: 1;
     min-height: 0;
     width: 100%;
+
+    /* Pinch-to-zoom and drag-to-pan are handled in Trends.tsx; without this the
+       browser claims the same gestures for page zoom and scroll first. */
+    touch-action: none;
 }
 
 /* =========================================================================
