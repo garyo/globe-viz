@@ -225,7 +225,8 @@ function buildOption(
     };
   }
 
-  const years = groupByYear(series);
+  const preliminaryFrom = payload.sources[source]?.preliminary_from;
+  const years = groupByYear(series, preliminaryFrom);
   if (years.length === 0) {
     return { title: { text: 'No data', left: 'center', textStyle: { color: c.text } } };
   }
@@ -235,7 +236,7 @@ function buildOption(
   const yearRange = Math.max(1, lastYear - firstYear);
   const record = findRecord(years);
 
-  const echartsSeries = years.map((s) => {
+  const echartsSeries = years.flatMap((s) => {
     const t = (s.year - firstYear) / yearRange;
     let color = lerpHex(c.yearOld, c.yearRecent, t);
     let lineWidth = 0.7;
@@ -257,14 +258,14 @@ function buildOption(
       lineWidth = Math.max(lineWidth, 4);
       z = 100;
     }
-    return {
+    const segment = (data: [number, number | null][], dotted: boolean) => ({
       name: String(s.year),
       type: 'line' as const,
-      data: s.data,
+      data,
       showSymbol: false,
       smooth: false,
       sampling: 'lttb' as const,
-      lineStyle: { width: lineWidth, color },
+      lineStyle: { width: lineWidth, color, ...(dotted && { type: 'dotted' as const }) },
       itemStyle: { color },
       z,
       // `silent` stops ECharts from doing its own mouse-driven hover-emphasis.
@@ -279,7 +280,21 @@ function buildOption(
         focus: 'none' as const,
         lineStyle: { width: Math.max(lineWidth + 1.5, 3), color },
       },
-    };
+    });
+
+    // ECharts can't dash part of one line series, so a year with provisional
+    // data becomes two series that share everything but `lineStyle.type` — and
+    // crucially share `name`, which several call sites key off. That's safe:
+    // `legend.data` is an explicit list so no duplicate entry appears,
+    // `nearestLine` reads `Number(s.name)` and gets the same year from either,
+    // and highlight/downplay dispatch by name lights up both halves at once.
+    // The dotted half starts one point early so the two visually join.
+    const i = s.prelimIndex;
+    if (i < 0) return [segment(s.data, false)];
+    return [
+      ...(i > 0 ? [segment(s.data.slice(0, i), false)] : []),
+      segment(s.data.slice(Math.max(0, i - 1)), true),
+    ];
   });
 
   const regionLabel = payload.region_label || REGION_LABELS[payload.region] || payload.region;
@@ -301,17 +316,27 @@ function buildOption(
   // Annotations: the all-time record value and the most recent data point.
   // Both ride on the latest year's series so a single markPoint config covers
   // them — the per-item label.formatter overrides the shared default.
-  const latestYearSeries = echartsSeries.find((s) => s.name === String(lastYear));
+  // The *last* series for that year: when the year is split into solid + dotted
+  // halves, the dotted tail is the one whose span contains the latest reading.
+  const latestYearSeries = echartsSeries.filter((s) => s.name === String(lastYear)).pop();
   if (latestYearSeries) {
     const markData: Array<{
       coord: [number, number];
       label: { formatter: string; position?: string };
     }> = [];
 
-    const latestPoints = years[years.length - 1].data;
-    const lastReal = [...latestPoints].reverse().find((p) => p[1] !== null) as
-      | [number, number]
-      | undefined;
+    const latestYear = years[years.length - 1];
+    const latestPoints = latestYear.data;
+    let lastRealIdx = latestPoints.length - 1;
+    while (lastRealIdx >= 0 && latestPoints[lastRealIdx][1] === null) lastRealIdx--;
+    const lastReal =
+      lastRealIdx >= 0 ? (latestPoints[lastRealIdx] as [number, number]) : undefined;
+    // Flag the latest reading when it's still provisional — the dotted line says
+    // so visually, but this label is what people actually read off the chart.
+    const prelimNote =
+      latestYear.prelimIndex >= 0 && lastRealIdx >= latestYear.prelimIndex
+        ? ' (preliminary)'
+        : '';
 
     // When the current year is at (or near) the all-time high, the record dot
     // and the latest-reading dot sit close together near the top and their
@@ -339,7 +364,7 @@ function buildOption(
       markData.push({
         coord: [record.doy, record.value],
         label: {
-          formatter: `latest & record: ${dayLabel(record.doy)}, ${record.year}\n${record.value.toFixed(2)}°C`,
+          formatter: `latest & record: ${dayLabel(record.doy)}, ${record.year}\n${record.value.toFixed(2)}°C${prelimNote}`,
           position: record.doy < 183 ? 'right' : 'left',
         },
       });
@@ -363,7 +388,7 @@ function buildOption(
         markData.push({
           coord: [doy, val],
           label: {
-            formatter: `${dayLabel(doy)}, ${lastYear}\n${val.toFixed(2)}°C`,
+            formatter: `${dayLabel(doy)}, ${lastYear}\n${val.toFixed(2)}°C${prelimNote}`,
             // Opposite the record when they collide; otherwise inside the plot
             // (late-year points sit near the right edge, so flip left on narrow).
             position: recordNearLatest ? (recordIsLeft ? 'right' : 'left') : narrow ? 'left' : 'right',
@@ -395,7 +420,8 @@ function buildOption(
       // tight — it overlaps the record annotation on phone screens.
       subtext: compact
         ? undefined
-        : `Source: ${SOURCE_LABELS[source]} · area-weighted average · ${series.dates.length.toLocaleString()} daily values`,
+        : `Source: ${SOURCE_LABELS[source]} · area-weighted average · ${series.dates.length.toLocaleString()} daily values` +
+          (preliminaryFrom ? ' · dotted = preliminary, subject to revision' : ''),
       left: 'center',
       textStyle: { color: c.text, fontSize: narrow ? 13 : 16 },
       subtextStyle: { color: c.subtitle, fontSize: 11 },

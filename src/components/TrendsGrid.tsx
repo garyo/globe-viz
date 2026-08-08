@@ -92,6 +92,9 @@ export const TrendsGrid = () => {
               const series = createMemo(
                 () => payload.sources[sourceKey()]?.datasets[datasetKey()]
               );
+              const preliminaryFrom = createMemo(
+                () => payload.sources[sourceKey()]?.preliminary_from
+              );
               const lastVal = () => {
                 const s = series();
                 return s && s.values.length ? s.values[s.values.length - 1] : null;
@@ -122,7 +125,11 @@ export const TrendsGrid = () => {
                       when={series()}
                       fallback={<div class="trends-grid-empty">no data</div>}
                     >
-                      <MiniChart series={series()!} colors={colors()} />
+                      <MiniChart
+                        series={series()!}
+                        colors={colors()}
+                        preliminaryFrom={preliminaryFrom()}
+                      />
                     </Show>
                   </div>
                   <Show when={lastDate()}>

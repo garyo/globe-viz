@@ -13,6 +13,10 @@ export interface YearSeries {
   // marker inserted where consecutive days are missing, so a data gap renders
   // as a break rather than a straight line interpolated across it.
   data: [number, number | null][];
+  // Index into `data` of the first provisional point, or -1 if this year has
+  // none. An index rather than a date because `data` interleaves break markers,
+  // so there is no longer a 1:1 correspondence with the source dates.
+  prelimIndex: number;
 }
 
 export interface ThemeColors {
@@ -110,7 +114,11 @@ function calendarDaysBetween(a: string, b: string): number {
 // straight line across it. Gap detection uses real calendar dates, not the
 // day-of-year delta, so the legitimate non-leap-year Feb 28 → Mar 1 jump
 // (leap-aligned doy 58 → 60) is not mistaken for a gap.
-export function groupByYear(series: DatasetSeries): YearSeries[] {
+//
+// `preliminaryFrom` is the payload's per-source date from which values are
+// still provisional; each year records where that tail starts so renderers can
+// draw it dotted.
+export function groupByYear(series: DatasetSeries, preliminaryFrom?: string): YearSeries[] {
   const byYear = new Map<number, { doy: number; value: number; date: string }[]>();
   for (let i = 0; i < series.dates.length; i++) {
     const date = series.dates[i];
@@ -127,12 +135,16 @@ export function groupByYear(series: DatasetSeries): YearSeries[] {
     .map(([year, pts]) => {
       pts.sort((p, q) => p.doy - q.doy);
       const data: [number, number | null][] = [];
+      let prelimIndex = -1;
       for (let i = 0; i < pts.length; i++) {
         if (i > 0 && calendarDaysBetween(pts[i - 1].date, pts[i].date) > 1) {
           data.push([pts[i - 1].doy + 1, null]);
         }
+        if (prelimIndex === -1 && preliminaryFrom && pts[i].date >= preliminaryFrom) {
+          prelimIndex = data.length;
+        }
         data.push([pts[i].doy, pts[i].value]);
       }
-      return { year, data };
+      return { year, data, prelimIndex };
     });
 }

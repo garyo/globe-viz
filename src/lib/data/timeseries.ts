@@ -11,6 +11,11 @@ export interface TimeseriesPayload {
   sources: {
     [sourceId: string]: {
       datasets: { [datasetName: string]: DatasetSeries };
+      // Earliest date whose values are still provisional and will be revised
+      // upstream (NOAA publishes OISST `_preliminary` files for ~2 weeks).
+      // Absent when the source has nothing outstanding — and absent entirely
+      // from payloads written before the pipeline started emitting it.
+      preliminary_from?: string;
     };
   };
   updated: string;

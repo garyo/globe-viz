@@ -9,6 +9,9 @@ import {
 interface MiniChartProps {
   series: DatasetSeries;
   colors: ThemeColors;
+  // Date from which the source's values are still provisional; that tail is
+  // drawn dashed, matching the dotted tail in the full Trends chart.
+  preliminaryFrom?: string;
 }
 
 // Tiny canvas-based year-spaghetti renderer for the grid view. Hand-drawn
@@ -44,7 +47,7 @@ export const MiniChart = (props: MiniChartProps) => {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
 
-    const years = groupByYear(props.series);
+    const years = groupByYear(props.series, props.preliminaryFrom);
     if (years.length === 0) return;
 
     // Compute y-range from finite values across all years.
@@ -75,15 +78,13 @@ export const MiniChart = (props: MiniChartProps) => {
     const lastYear = years[years.length - 1].year;
     const yearRange = Math.max(1, lastYear - firstYear);
 
-    const drawYear = (s: typeof years[number], color: string, lineWidth: number) => {
-      if (s.data.length === 0) return;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = lineWidth;
+    const strokePoints = (points: [number, number | null][], dash: number[]) => {
+      ctx.setLineDash(dash);
       ctx.beginPath();
       // null values are gap-break markers: lift the pen so a missing stretch
       // isn't drawn as a straight line across the gap.
       let penDown = false;
-      for (const [doy, v] of s.data) {
+      for (const [doy, v] of points) {
         if (v === null) {
           penDown = false;
           continue;
@@ -95,6 +96,22 @@ export const MiniChart = (props: MiniChartProps) => {
         penDown = true;
       }
       ctx.stroke();
+    };
+
+    const drawYear = (s: typeof years[number], color: string, lineWidth: number) => {
+      if (s.data.length === 0) return;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = lineWidth;
+      const i = s.prelimIndex;
+      if (i < 0) {
+        strokePoints(s.data, []);
+        return;
+      }
+      // Same split as Trends.tsx: the provisional tail is dashed and starts one
+      // point early so the two halves join.
+      if (i > 0) strokePoints(s.data.slice(0, i), []);
+      strokePoints(s.data.slice(Math.max(0, i - 1)), [2, 2]);
+      ctx.setLineDash([]);
     };
 
     // Older years first (gradient old → recent), then the highlighted years
@@ -137,6 +154,7 @@ export const MiniChart = (props: MiniChartProps) => {
   createEffect(() => {
     props.series;
     props.colors;
+    props.preliminaryFrom;
     draw();
   });
 
