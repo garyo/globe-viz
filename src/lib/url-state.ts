@@ -95,6 +95,12 @@ export function readUrlState(): Partial<AppState> & {
         lon: parts[1],
         zoom: Math.max(0.05, Math.min(20, parts[2])),
       };
+      // A framed view must hold still: the recipient's saved auto-rotate
+      // setting would drift the globe away from the shared framing before
+      // they even press Play. URL state wins over localStorage, so a cam
+      // link turns rotation off (like any URL-applied state, it then
+      // carries forward as the last-used setting).
+      out.autoRotate = false;
     }
   }
 
