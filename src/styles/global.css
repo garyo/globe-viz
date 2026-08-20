@@ -1283,6 +1283,16 @@ h1 {
     gap: 6px;
 }
 
+/* Side-by-side buttons sharing one row. */
+.control-row.inline {
+    flex-direction: row;
+}
+
+.control-row.inline .control-button {
+    flex: 1;
+    min-width: 0;
+}
+
 .control-label {
     display: flex;
     justify-content: space-between;
@@ -1585,6 +1595,49 @@ h1 {
 .control-button:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+}
+
+/* Movie-export progress overlay. The backdrop intentionally swallows pointer
+   events so the camera framing can't change mid-export. */
+.movie-export-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 500;
+    background: rgba(0, 0, 0, 0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.movie-export-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    min-width: 280px;
+    padding: 20px 28px;
+    background: var(--bg-app);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+}
+
+.movie-export-card h3 {
+    margin: 0;
+    font-size: 16px;
+}
+
+.movie-export-card p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-tertiary);
+    font-variant-numeric: tabular-nums;
+}
+
+.movie-export-card progress {
+    width: 100%;
+    accent-color: var(--accent, #4a90d9);
 }
 
 /* Wraps a date range input so the loop marker can be drawn over its track.

@@ -98,6 +98,18 @@ export function getCameraOrbit(
   return { lat, lon, zoom: distance / fit };
 }
 
+/** Unit vector from the globe toward the camera for this orbit — the inverse
+ * of the lat/lon extraction in getCameraOrbit. */
+function orbitDirection(orbit: CameraOrbit): Vector3 {
+  const latRad = (orbit.lat * Math.PI) / 180;
+  const lonRad = (orbit.lon * Math.PI) / 180;
+  return new Vector3(
+    -Math.cos(latRad) * Math.cos(lonRad),
+    Math.sin(latRad),
+    Math.cos(latRad) * Math.sin(lonRad),
+  );
+}
+
 export function applyCameraOrbit(
   camera: PerspectiveCamera,
   controls: OrbitControls,
@@ -109,18 +121,49 @@ export function applyCameraOrbit(
     Math.max(orbit.zoom * fit, controls.minDistance),
     controls.maxDistance,
   );
-  const latRad = (orbit.lat * Math.PI) / 180;
-  const lonRad = (orbit.lon * Math.PI) / 180;
-  const dir = new Vector3(
-    -Math.cos(latRad) * Math.cos(lonRad),
-    Math.sin(latRad),
-    Math.cos(latRad) * Math.sin(lonRad),
-  );
-  camera.position.copy(controls.target).addScaledVector(dir, distance);
+  camera.position
+    .copy(controls.target)
+    .addScaledVector(orbitDirection(orbit), distance);
   lastFit.set(camera, fit);
   // update() re-aims the camera at the target and applies the polar/distance
   // constraints, so an out-of-range orbit lands on the nearest legal view.
   controls.update();
+}
+
+/**
+ * Standalone camera for offscreen movie rendering: an exact clone of the live
+ * camera — same aim, zoom, and any panning — adjusted only for the movie's
+ * aspect and its burned-in bottom band. Reconstructing the view from a
+ * CameraOrbit instead would re-aim around a differently-offset target, which
+ * reads as a large aim error once zoomed in. Two rigid adjustments keep the
+ * band from eating the subject: dolly back around the orbit target so the
+ * screen's vertical framing fits the area above the band, then translate
+ * camera + aim together along screen-down so the framing rides half a band
+ * higher.
+ */
+export function createExportCamera(
+  liveCamera: PerspectiveCamera,
+  target: Vector3,
+  width: number,
+  height: number,
+  bottomBandPx: number,
+): PerspectiveCamera {
+  const camera = liveCamera.clone();
+  camera.aspect = width / height;
+
+  const k = height / (height - bottomBandPx);
+  camera.position.sub(target).multiplyScalar(k).add(target);
+
+  const dist = camera.position.distanceTo(target);
+  const worldPerPx = (2 * dist * Math.tan((camera.fov * Math.PI) / 360)) / height;
+  const shift = (bottomBandPx / 2) * worldPerPx;
+  camera.position.addScaledVector(
+    new Vector3(0, -1, 0).applyQuaternion(camera.quaternion),
+    shift,
+  );
+
+  camera.updateProjectionMatrix();
+  return camera;
 }
 
 // The live scene registers a provider so UI outside the Three.js component

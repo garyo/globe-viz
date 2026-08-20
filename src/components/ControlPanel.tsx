@@ -12,9 +12,12 @@ import {
   showNotice,
 } from '../stores/appState';
 import { isMobile } from '../lib/helpers/responsiveness-client';
-import { buildShareUrl } from '../lib/url-state';
+import { buildShareUrl, SITE_ORIGIN } from '../lib/url-state';
 import { currentCameraOrbit } from '../lib/scene/camera';
 import { copyText } from '../lib/helpers/clipboard';
+import { getMovieExportContext, isMovieExportSupported } from '../lib/export/exportContext';
+import type { MovieExportHandle, MovieExportProgress } from '../lib/export/movieExport';
+import { MovieExportOverlay } from './MovieExportOverlay';
 import { Toggle } from './controls/Toggle';
 import { DateSlider } from './controls/DateSlider';
 import { AnimationControls } from './controls/AnimationControls';
@@ -24,6 +27,8 @@ import { QuickDateSlider } from './controls/QuickDateSlider';
 export const ControlPanel = () => {
   const [debugOpen, setDebugOpen] = createSignal(false);
   const [menuVisible, setMenuVisible] = createSignal(true);
+  const [exportProgress, setExportProgress] = createSignal<MovieExportProgress | null>(null);
+  let exportHandle: MovieExportHandle | undefined;
 
   // On phones the open panel covers most of the globe — start closed there
   // (the quick date slider takes over). Client-side only, hence onMount.
@@ -89,12 +94,14 @@ export const ControlPanel = () => {
     saveState();
   };
 
-  // Copy a link reproducing this exact view: camera framing, dataset, dates,
+  // Share link reproducing this exact view: camera framing, dataset, dates,
   // and animation settings. When parked on the latest date, the link omits it
   // (buildShareUrl) so a recipient's animation runs through *their* latest.
-  const handleShare = async () => {
+  // Used by both the copy-link button (current origin) and the QR code burned
+  // into exported movies (canonical origin, so scans work anywhere).
+  const currentShareUrl = (origin?: string) => {
     const dates = selectableDates();
-    const url = buildShareUrl({
+    return buildShareUrl({
       activeTab: appState.activeTab,
       source: appState.source,
       dataset: appState.dataset,
@@ -105,9 +112,61 @@ export const ControlPanel = () => {
       loopStartDate: appState.loopStartDate,
       camera: currentCameraOrbit() ?? undefined,
       fps: 1000 / appState.animationSpeed,
-    });
-    const ok = await copyText(url);
+    }, origin);
+  };
+
+  const handleShare = async () => {
+    const ok = await copyText(currentShareUrl());
     showNotice(ok ? 'Link copied — reproduces this view & animation' : 'Could not copy link');
+  };
+
+  // Export the current animation cycle (loop start → latest) as an MP4 at
+  // the current speed setting. Heavy encoder code loads on demand.
+  const handleSaveMovie = async () => {
+    const dates = selectableDates().slice(loopStartIndex());
+    if (dates.length < 2) {
+      showNotice('Nothing to animate — need at least two dates');
+      return;
+    }
+    const ctx = getMovieExportContext();
+    if (!ctx) {
+      showNotice('Globe is not ready yet');
+      return;
+    }
+    setAppState('isAnimating', false);
+    setExportProgress({ frame: 0, total: dates.length, phase: 'encoding' });
+    try {
+      const { startMovieExport } = await import('../lib/export/movieExport');
+      exportHandle = startMovieExport(
+        ctx,
+        {
+          fps: 1000 / appState.animationSpeed,
+          dates,
+          source: appState.source,
+          dataset: appState.dataset,
+          holdLastMs: 1000,
+          shareUrl: currentShareUrl(SITE_ORIGIN),
+        },
+        setExportProgress,
+      );
+      const { blob, filename } = await exportHandle.done;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+      showNotice(`Movie saved — ${filename}`);
+    } catch (err) {
+      if ((err as Error)?.name === 'MovieExportCancelled') {
+        showNotice('Movie export cancelled');
+      } else {
+        console.error('Movie export failed:', err);
+        showNotice('Movie export failed — see console for details');
+      }
+    } finally {
+      exportHandle = undefined;
+      setExportProgress(null);
+    }
   };
 
   const handleReset = () => {
@@ -149,13 +208,25 @@ export const ControlPanel = () => {
               onClearLoopStart={handleClearLoopStart}
             />
 
-            <div class="control-row">
+            <div class="control-row inline">
               <button
                 class="control-button"
                 onClick={() => void handleShare()}
                 title="Copy a link that reproduces this exact view, dates, and animation"
               >
                 🔗 Copy share link
+              </button>
+              <button
+                class="control-button"
+                onClick={() => void handleSaveMovie()}
+                disabled={!isMovieExportSupported() || appState.isLoading || !!exportProgress()}
+                title={
+                  isMovieExportSupported()
+                    ? 'Save this animation cycle as an MP4 movie'
+                    : 'Movie export needs a browser with WebCodecs (Chrome, Edge, Safari 16.4+)'
+                }
+              >
+                🎬 Save movie
               </button>
             </div>
 
@@ -198,6 +269,15 @@ export const ControlPanel = () => {
             </button>
         </div>
       </div>
+
+      <Show when={exportProgress()}>
+        {(progress) => (
+          <MovieExportOverlay
+            progress={progress()}
+            onCancel={() => exportHandle?.cancel()}
+          />
+        )}
+      </Show>
 
       <QuickDateSlider
         dates={selectableDates()}

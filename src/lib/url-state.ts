@@ -172,12 +172,19 @@ export interface ShareUrlInput extends UrlStateInput {
   fps?: number;
 }
 
+/** The deployed site, for share links embedded in artifacts that outlive the
+ * current browser session (e.g. the QR code burned into exported movies —
+ * a localhost origin would be dead for anyone scanning it). */
+export const SITE_ORIGIN = 'https://globe-viz.oberbrunner.com';
+
 /**
  * Absolute URL capturing the full view for sharing: everything writeUrlState
  * syncs, plus the camera framing and animation speed. A recipient sees the
- * sender's exact view and, on Play, the same animation cycle.
+ * sender's exact view and, on Play, the same animation cycle. `origin`
+ * defaults to the current origin; pass SITE_ORIGIN for links that must work
+ * outside this session.
  */
-export function buildShareUrl(s: ShareUrlInput): string {
+export function buildShareUrl(s: ShareUrlInput, origin?: string): string {
   const p = buildParams(s);
   if (s.activeTab === 'globe') {
     if (s.camera) {
@@ -188,5 +195,7 @@ export function buildShareUrl(s: ShareUrlInput): string {
   }
   // Commas are legal unencoded in query values; keep the cam triple readable.
   const query = p.toString().replace(/%2C/g, ',');
-  return `${window.location.origin}${window.location.pathname}?${query}`;
+  const base = origin ?? window.location.origin;
+  const path = origin ? '/' : window.location.pathname;
+  return `${base}${path}?${query}`;
 }

@@ -32,6 +32,7 @@ import {
 } from '../lib/scene/camera';
 import { createGlobe, updateGlobeTexture } from '../lib/scene/globe';
 import { loadCoastlines, type CoastlineOverlay } from '../lib/scene/coastlines';
+import { setMovieExportProvider } from '../lib/export/exportContext';
 import { fetchDatasetAssets } from '../lib/data/assets';
 import { TextureCache } from '../lib/data/textureCache';
 import { spherePointToLatLon } from '../lib/scene/geo';
@@ -152,6 +153,19 @@ export const GlobeScene = () => {
       } catch (err) {
         console.warn('Failed to load coastlines:', err);
       }
+
+      // Movie export needs the live scene objects; resolved lazily on demand.
+      setMovieExportProvider(() => ({
+        renderer,
+        scene,
+        camera,
+        controls,
+        globe,
+        coastlines,
+        textureCache,
+        textureLoader,
+        canvas: canvasRef!,
+      }));
     }
 
     pickMarker = createPickMarker(scene);
@@ -166,6 +180,7 @@ export const GlobeScene = () => {
 
   onCleanup(() => {
     setCameraOrbitProvider(null);
+    setMovieExportProvider(null);
     if (animationId) cancelAnimationFrame(animationId);
     if (renderer) renderer.dispose();
     if (controls) controls.dispose();
