@@ -9,8 +9,12 @@ import {
   setSelectableIndex,
   loopStartIndex,
   getCurrentDate,
+  showNotice,
 } from '../stores/appState';
 import { isMobile } from '../lib/helpers/responsiveness-client';
+import { buildShareUrl } from '../lib/url-state';
+import { currentCameraOrbit } from '../lib/scene/camera';
+import { copyText } from '../lib/helpers/clipboard';
 import { Toggle } from './controls/Toggle';
 import { DateSlider } from './controls/DateSlider';
 import { AnimationControls } from './controls/AnimationControls';
@@ -85,6 +89,27 @@ export const ControlPanel = () => {
     saveState();
   };
 
+  // Copy a link reproducing this exact view: camera framing, dataset, dates,
+  // and animation settings. When parked on the latest date, the link omits it
+  // (buildShareUrl) so a recipient's animation runs through *their* latest.
+  const handleShare = async () => {
+    const dates = selectableDates();
+    const url = buildShareUrl({
+      activeTab: appState.activeTab,
+      source: appState.source,
+      dataset: appState.dataset,
+      region: appState.region,
+      trendsMode: appState.trendsMode,
+      currentDate: getCurrentDate(),
+      latestDate: dates[dates.length - 1],
+      loopStartDate: appState.loopStartDate,
+      camera: currentCameraOrbit() ?? undefined,
+      fps: 1000 / appState.animationSpeed,
+    });
+    const ok = await copyText(url);
+    showNotice(ok ? 'Link copied — reproduces this view & animation' : 'Could not copy link');
+  };
+
   const handleReset = () => {
     localStorage.removeItem('appState');
     window.location.reload();
@@ -123,6 +148,16 @@ export const ControlPanel = () => {
               onSetLoopStart={handleSetLoopStart}
               onClearLoopStart={handleClearLoopStart}
             />
+
+            <div class="control-row">
+              <button
+                class="control-button"
+                onClick={() => void handleShare()}
+                title="Copy a link that reproduces this exact view, dates, and animation"
+              >
+                🔗 Copy share link
+              </button>
+            </div>
 
             <RotationControls
               autoRotate={appState.autoRotate}

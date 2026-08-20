@@ -2,6 +2,7 @@ import { batch } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { Color, type Texture } from 'three';
 import { readUrlState } from '../lib/url-state';
+import type { CameraOrbit } from '../lib/scene/camera';
 
 export interface Metadata {
   cmap: [number, string][];
@@ -379,9 +380,10 @@ function loadSavedState(): Partial<AppState> {
 
 const savedState = loadSavedState();
 // URL params take precedence over localStorage so a shared link always wins.
-// `pendingUrlDate` is split out — it needs availableDates to resolve to an
-// index, which happens later in AppLoader.
-const { pendingUrlDate, ...urlState } = readUrlState();
+// `pendingUrlDate` and `pendingUrlCamera` are split out — the date needs
+// availableDates to resolve to an index (later, in AppLoader), and the camera
+// needs the live Three.js scene (later still, in GlobeScene).
+const { pendingUrlDate, pendingUrlCamera, ...urlState } = readUrlState();
 
 /**
  * Date selected via ?date= in the URL, awaiting resolution against
@@ -393,6 +395,17 @@ export function consumePendingDateFromUrl(): string | undefined {
   const d = pendingDateFromUrl;
   pendingDateFromUrl = undefined;
   return d;
+}
+
+/**
+ * Camera framing from ?cam= in a share link, awaiting the scene's camera and
+ * controls. Consumed (and cleared) by GlobeScene once they exist.
+ */
+let pendingCameraFromUrl: CameraOrbit | undefined = pendingUrlCamera;
+export function consumePendingCameraFromUrl(): CameraOrbit | undefined {
+  const c = pendingCameraFromUrl;
+  pendingCameraFromUrl = undefined;
+  return c;
 }
 
 export const [appState, setAppState] = createStore<AppState>({

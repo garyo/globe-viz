@@ -2,6 +2,7 @@ import { onMount, onCleanup, createEffect, createSignal, Show } from 'solid-js';
 import {
   appState,
   setAppState,
+  consumePendingCameraFromUrl,
   selectableDates,
   currentSelectableIndex,
   setSelectableIndex,
@@ -20,7 +21,15 @@ import {
   createTextureLoader,
   resizeRendererToDisplaySize,
 } from '../lib/scene/setup';
-import { createCamera, createControls, updateCameraAspect, refitCameraForResize } from '../lib/scene/camera';
+import {
+  createCamera,
+  createControls,
+  updateCameraAspect,
+  refitCameraForResize,
+  getCameraOrbit,
+  applyCameraOrbit,
+  setCameraOrbitProvider,
+} from '../lib/scene/camera';
 import { createGlobe, updateGlobeTexture } from '../lib/scene/globe';
 import { loadCoastlines, type CoastlineOverlay } from '../lib/scene/coastlines';
 import { fetchDatasetAssets } from '../lib/data/assets';
@@ -124,6 +133,12 @@ export const GlobeScene = () => {
       controls.autoRotate = appState.autoRotate;
       controls.autoRotateSpeed = appState.autoRotateSpeed;
 
+      // Restore a share-link camera, and let the share button snapshot the
+      // live framing without reaching into this component.
+      const urlCamera = consumePendingCameraFromUrl();
+      if (urlCamera) applyCameraOrbit(camera, controls, canvasRef, urlCamera);
+      setCameraOrbitProvider(() => getCameraOrbit(camera, controls, canvasRef!));
+
       // Coastline overlay: subtle screen-space line above the globe surface
       // (radius 1.001 to avoid z-fighting with the unit-radius sphere).
       try {
@@ -150,6 +165,7 @@ export const GlobeScene = () => {
   });
 
   onCleanup(() => {
+    setCameraOrbitProvider(null);
     if (animationId) cancelAnimationFrame(animationId);
     if (renderer) renderer.dispose();
     if (controls) controls.dispose();

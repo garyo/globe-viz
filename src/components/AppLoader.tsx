@@ -209,6 +209,7 @@ export const AppLoader: Component = () => {
       // history.replaceState inside, so date scrubbing doesn't pollute the
       // back button.
       createEffect(() => {
+        const selDates = selectableDates();
         writeUrlState({
           activeTab: appState.activeTab,
           source: appState.source,
@@ -216,6 +217,7 @@ export const AppLoader: Component = () => {
           region: appState.region,
           trendsMode: appState.trendsMode,
           currentDate: appState.availableDates[appState.currentDateIndex],
+          latestDate: selDates[selDates.length - 1],
           loopStartDate: appState.loopStartDate,
         });
       });

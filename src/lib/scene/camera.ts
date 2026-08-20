@@ -70,6 +70,69 @@ function positionCamera(camera: PerspectiveCamera, distance: number) {
 // clobbering it with a fresh fit.
 const lastFit = new WeakMap<PerspectiveCamera, number>();
 
+/**
+ * Camera framing in globe terms: the geographic point the camera sits over
+ * (degrees, lon east-positive) and its distance as a ratio of this viewport's
+ * fit distance. Device-independent — a phone and a desktop restore the same
+ * relative framing from the same orbit. Used by the share-link URL (?cam=).
+ */
+export interface CameraOrbit {
+  lat: number;
+  lon: number;
+  zoom: number;
+}
+
+export function getCameraOrbit(
+  camera: PerspectiveCamera,
+  controls: OrbitControls,
+  canvas: HTMLCanvasElement,
+): CameraOrbit {
+  const offset = camera.position.clone().sub(controls.target);
+  const distance = offset.length();
+  const dir = offset.divideScalar(distance || 1);
+  // Inverse of the direction convention in positionCamera:
+  // dir = (-cos(lat)cos(lon), sin(lat), cos(lat)sin(lon)).
+  const lat = (Math.asin(Math.max(-1, Math.min(1, dir.y))) * 180) / Math.PI;
+  const lon = (Math.atan2(dir.z, -dir.x) * 180) / Math.PI;
+  const { dist: fit } = viewAdjustments(canvas);
+  return { lat, lon, zoom: distance / fit };
+}
+
+export function applyCameraOrbit(
+  camera: PerspectiveCamera,
+  controls: OrbitControls,
+  canvas: HTMLCanvasElement,
+  orbit: CameraOrbit,
+) {
+  const { dist: fit } = viewAdjustments(canvas);
+  const distance = Math.min(
+    Math.max(orbit.zoom * fit, controls.minDistance),
+    controls.maxDistance,
+  );
+  const latRad = (orbit.lat * Math.PI) / 180;
+  const lonRad = (orbit.lon * Math.PI) / 180;
+  const dir = new Vector3(
+    -Math.cos(latRad) * Math.cos(lonRad),
+    Math.sin(latRad),
+    Math.cos(latRad) * Math.sin(lonRad),
+  );
+  camera.position.copy(controls.target).addScaledVector(dir, distance);
+  lastFit.set(camera, fit);
+  // update() re-aims the camera at the target and applies the polar/distance
+  // constraints, so an out-of-range orbit lands on the nearest legal view.
+  controls.update();
+}
+
+// The live scene registers a provider so UI outside the Three.js component
+// (the share button) can snapshot the current framing on demand.
+let orbitProvider: (() => CameraOrbit) | null = null;
+export function setCameraOrbitProvider(fn: (() => CameraOrbit) | null) {
+  orbitProvider = fn;
+}
+export function currentCameraOrbit(): CameraOrbit | null {
+  return orbitProvider?.() ?? null;
+}
+
 export function createCamera(canvas: HTMLCanvasElement): PerspectiveCamera {
   // Fall back to 1 when the canvas is hidden at mount (e.g. starting on a
   // non-Globe tab): 0/0 would seed the projection matrix with NaN, and

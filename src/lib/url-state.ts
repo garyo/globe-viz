@@ -9,15 +9,22 @@
  *   - mode       — single | grid       (only meaningful on Trends)
  *   - date       — YYYY-MM-DD          (only meaningful on Globe)
  *   - from       — YYYY-MM-DD          playback loop start (Globe only)
+ *   - cam        — lat,lon,zoom        camera framing (share links only)
+ *   - fps        — animation speed     (share links only)
  *
  * URL > localStorage > defaults. Writes use history.replaceState so the
  * URL bar updates in place without leaking the data-state churn into the
  * browser's back-stack.
  *
+ * `cam` and `fps` are read on load but only ever *written* by buildShareUrl
+ * (the Copy-share-link button) — syncing the camera into the URL bar live
+ * would churn replaceState every frame during a drag or auto-rotate.
+ *
  * Theme/auto-rotate/etc. stay in localStorage only — they're personal
  * preferences, not part of the chart being shared.
  */
 import type { AppState, DatasetId, SourceId, TabId } from '../stores/appState';
+import type { CameraOrbit } from './scene/camera';
 
 const VALID_TAB: TabId[] = ['globe', 'trends', 'about'];
 const VALID_SRC: SourceId[] = ['oisst', 'era5', 'gfs'];
@@ -34,10 +41,16 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
  * apply once `availableDates` is loaded — it's returned as a sentinel field
  * named `pendingUrlDate` so the loader can resolve it post-hydration.
  */
-export function readUrlState(): Partial<AppState> & { pendingUrlDate?: string } {
+export function readUrlState(): Partial<AppState> & {
+  pendingUrlDate?: string;
+  pendingUrlCamera?: CameraOrbit;
+} {
   if (typeof window === 'undefined') return {};
   const p = new URLSearchParams(window.location.search);
-  const out: Partial<AppState> & { pendingUrlDate?: string } = {};
+  const out: Partial<AppState> & {
+    pendingUrlDate?: string;
+    pendingUrlCamera?: CameraOrbit;
+  } = {};
 
   const tab = p.get('tab');
   if (tab && (VALID_TAB as string[]).includes(tab)) out.activeTab = tab as TabId;
@@ -70,6 +83,27 @@ export function readUrlState(): Partial<AppState> & { pendingUrlDate?: string } 
   const from = p.get('from');
   if (from && DATE_RE.test(from)) out.loopStartDate = from;
 
+  // Camera framing from a share link. Latitude stops short of the poles
+  // (lookAt degenerates there) and zoom is bounded to something sane; the
+  // scene clamps further against the controls' real limits when applying.
+  const cam = p.get('cam');
+  if (cam) {
+    const parts = cam.split(',').map(Number);
+    if (parts.length === 3 && parts.every(Number.isFinite)) {
+      out.pendingUrlCamera = {
+        lat: Math.max(-89, Math.min(89, parts[0])),
+        lon: parts[1],
+        zoom: Math.max(0.05, Math.min(20, parts[2])),
+      };
+    }
+  }
+
+  // Animation speed, in the fps terms the UI slider uses (state holds ms).
+  const fps = Number(p.get('fps'));
+  if (Number.isFinite(fps) && fps >= 1 && fps <= 30) {
+    out.animationSpeed = Math.round(1000 / fps);
+  }
+
   return out;
 }
 
@@ -93,17 +127,20 @@ interface UrlStateInput {
   region: string;
   trendsMode: 'single' | 'grid';
   currentDate?: string;
+  // The current dataset's latest date. When currentDate matches it, `date` is
+  // omitted from the URL so a visitor opening the link later gets *their*
+  // latest — an animation shared "through today" stays evergreen.
+  latestDate?: string;
   loopStartDate?: string | null;
 }
 
 /**
- * Serialize the data slice to a query string and replace the current URL.
- * Omits irrelevant params per tab to keep URLs short:
+ * Serialize the data slice to query params, omitting irrelevant params per
+ * tab to keep URLs short:
  *   - region/mode only on Trends tab
- *   - date only on Globe tab
+ *   - date/from only on Globe tab (date dropped when parked on the latest)
  */
-export function writeUrlState(s: UrlStateInput): void {
-  if (typeof window === 'undefined') return;
+function buildParams(s: UrlStateInput): URLSearchParams {
   const p = new URLSearchParams();
   p.set('tab', s.activeTab);
   p.set('src', s.source);
@@ -115,11 +152,41 @@ export function writeUrlState(s: UrlStateInput): void {
     p.set('mode', s.trendsMode);
     if (s.region && s.region !== 'global') p.set('region', s.region);
   } else if (s.activeTab === 'globe') {
-    if (s.currentDate) p.set('date', s.currentDate);
+    if (s.currentDate && s.currentDate !== s.latestDate) p.set('date', s.currentDate);
     if (s.loopStartDate) p.set('from', s.loopStartDate);
   }
-  const url = `${window.location.pathname}?${p.toString()}${window.location.hash}`;
+  return p;
+}
+
+/** Replace the current URL with the serialized data slice. */
+export function writeUrlState(s: UrlStateInput): void {
+  if (typeof window === 'undefined') return;
+  const url = `${window.location.pathname}?${buildParams(s).toString()}${window.location.hash}`;
   // replaceState rather than pushState so dragging the date slider doesn't
   // create 100 back-stack entries.
   window.history.replaceState(null, '', url);
+}
+
+export interface ShareUrlInput extends UrlStateInput {
+  camera?: CameraOrbit;
+  fps?: number;
+}
+
+/**
+ * Absolute URL capturing the full view for sharing: everything writeUrlState
+ * syncs, plus the camera framing and animation speed. A recipient sees the
+ * sender's exact view and, on Play, the same animation cycle.
+ */
+export function buildShareUrl(s: ShareUrlInput): string {
+  const p = buildParams(s);
+  if (s.activeTab === 'globe') {
+    if (s.camera) {
+      const { lat, lon, zoom } = s.camera;
+      p.set('cam', `${lat.toFixed(1)},${lon.toFixed(1)},${zoom.toFixed(3)}`);
+    }
+    if (s.fps) p.set('fps', String(Math.round(s.fps * 10) / 10));
+  }
+  // Commas are legal unencoded in query values; keep the cam triple readable.
+  const query = p.toString().replace(/%2C/g, ',');
+  return `${window.location.origin}${window.location.pathname}?${query}`;
 }
