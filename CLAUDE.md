@@ -37,6 +37,8 @@ CF Pages does not auto-detect bun from `bun.lock` alone, and Bun is the only sup
 
 - **A year with preliminary data becomes *two* ECharts series sharing one `name`.** ECharts can't dash part of a single line series, so when the payload carries `sources[src].preliminary_from`, `Trends.tsx` splits that year into a solid head and a dotted tail (see `prelimIndex` on `YearSeries`). Both keep `name: String(year)`, which is load-bearing in several places and safe by design: `legend.data` is an explicit list so no duplicate entry appears, `nearestLine` reads `Number(s.name)` and gets the same year from either half, and `highlight`/`downplay` dispatch by name lights up both at once. The markPoint deliberately attaches to the *last* series for that year, since that's the half whose span contains the latest reading.
 
+- **Link previews come from a Pages Function, not the static tags.** `functions/index.ts` rewrites the `og:*`/`twitter:*` meta tags on `/` to the card `sea-surface-temp-viz/export_og_cards.py` rendered for the URL's `src`/`ds`/`region` (the key is literally `{src}-{ds}-{region}`, so renaming a URL param or dataset id silently drops links to the global card). It also rewrites `og:url` to the request URL: Facebook treats `og:url` as canonical and re-scrapes it, so leaving the static `/` there would give every link the default card. `public/_routes.json` keeps static assets from invoking the function.
+
 - **`loadSavedState()` filters undefined values** before spreading into store defaults. When adding a new persisted appState field, add it to the `KEYS` array in `loadSavedState`, otherwise an unset value will spread `undefined` and clobber the default.
 
 ## Conventions
