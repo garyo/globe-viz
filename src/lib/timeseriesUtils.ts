@@ -46,27 +46,24 @@ export function leapAlignedDayOfYear(dateStr: string): number {
   return LEAP_DAYS_BEFORE_MONTH[m - 1] + d - 1;
 }
 
-const LEAP_YEAR_DAYS = 366;
-
-// Each month's midpoint on the leap-aligned day-of-year axis: where a monthly
-// value applies exactly.
-const MID_MONTH_DOY = LEAP_DAYS_BEFORE_MONTH.map((start, i) => {
-  const end = LEAP_DAYS_BEFORE_MONTH[i + 1] ?? LEAP_YEAR_DAYS;
-  return start + (end - start - 1) / 2;
-});
+/** Fraction of the year at the middle of a leap-aligned day of year. */
+export function yearFraction(doy: number): number {
+  return (doy + 0.5) / 366;
+}
 
 /**
- * Value at a day of year from 12 monthly values, interpolated linearly between
- * mid-month nodes and wrapping December → January, so a daily curve built from
- * it has no steps at month boundaries.
+ * A baseline offset on a given day from its seasonal coefficients
+ * [a0, a1, b1, a2, b2]: a0 + a1·cos 2πτ + b1·sin 2πτ + a2·cos 4πτ + b2·sin 4πτ.
+ * The globe shader evaluates the same formula per pixel (see
+ * sea-surface-temp-viz/doc/baselines.md §3.4).
  */
-export function interpolateMonthly(monthly: number[], doy: number): number {
-  const next = MID_MONTH_DOY.findIndex((mid) => mid > doy);
-  const hi = next === -1 ? 0 : next;
-  const lo = (hi + 11) % 12;
-  const wrap = (days: number) => (days + LEAP_YEAR_DAYS) % LEAP_YEAR_DAYS;
-  const t = wrap(doy - MID_MONTH_DOY[lo]) / wrap(MID_MONTH_DOY[hi] - MID_MONTH_DOY[lo]);
-  return monthly[lo] + (monthly[hi] - monthly[lo]) * t;
+export function seasonalOffset(coefficients: number[], doy: number): number {
+  const angle = 2 * Math.PI * yearFraction(doy);
+  const [a0, a1, b1, a2, b2] = coefficients;
+  return (
+    a0 + a1 * Math.cos(angle) + b1 * Math.sin(angle)
+    + a2 * Math.cos(2 * angle) + b2 * Math.sin(2 * angle)
+  );
 }
 
 export interface BaselinedSeries {
@@ -91,7 +88,7 @@ export function withBaseline(series: DatasetSeries, baseline: BaselineId): Basel
     shifted = {
       dates: series.dates,
       values: series.values.map(
-        (v, i) => v + interpolateMonthly(offsets, leapAlignedDayOfYear(series.dates[i])),
+        (v, i) => v + seasonalOffset(offsets, leapAlignedDayOfYear(series.dates[i])),
       ),
     };
     byBaseline.set(baseline, shifted);

@@ -5,8 +5,9 @@ const BUCKET_URL = 'https://climate-change-assets.s3.amazonaws.com/sea-surface-t
 export interface DatasetSeries {
   dates: string[];   // 'YYYY-MM-DD'
   values: number[];  // parallel to dates
-  // Anomaly datasets only: per alternative baseline, the region's mean offset
-  // for each calendar month (Jan..Dec, °C) to add to these 1971–2000 values.
+  // Anomaly datasets only: per alternative baseline, seasonal coefficients
+  // [a0, a1, b1, a2, b2] (°C) of the offset to add to these 1971–2000 values;
+  // see seasonalOffset().
   baseline_offsets?: Partial<Record<BaselineId, number[]>>;
 }
 
