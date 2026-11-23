@@ -214,6 +214,7 @@ export const AppLoader: Component = () => {
           activeTab: appState.activeTab,
           source: appState.source,
           dataset: appState.dataset,
+          baseline: appState.baseline,
           region: appState.region,
           trendsMode: appState.trendsMode,
           currentDate: appState.availableDates[appState.currentDateIndex],

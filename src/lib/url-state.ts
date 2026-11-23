@@ -6,6 +6,7 @@
  *   - source     — oisst | era5
  *   - dataset    — raw cache-key dataset id (sst/anom/sst_anom/t2m/t2m_anom)
  *   - region     — global, nino_3_4, ... (only meaningful on Trends)
+ *   - base       — anomaly baseline (Trends, anomaly datasets; omitted at 1971–2000)
  *   - mode       — single | grid       (only meaningful on Trends)
  *   - date       — YYYY-MM-DD          (only meaningful on Globe)
  *   - from       — YYYY-MM-DD          playback loop start (Globe only)
@@ -23,7 +24,7 @@
  * Theme/auto-rotate/etc. stay in localStorage only — they're personal
  * preferences, not part of the chart being shared.
  */
-import type { AppState, DatasetId, SourceId, TabId } from '../stores/appState';
+import type { AppState, BaselineId, DatasetId, SourceId, TabId } from '../stores/appState';
 import type { CameraOrbit } from './scene/camera';
 
 const VALID_TAB: TabId[] = ['globe', 'trends', 'about'];
@@ -33,6 +34,9 @@ const VALID_DS: DatasetId[] = [
   't2m_mean', 't2m_max', 't2m_min',
   't2m_mean_anom', 't2m_max_anom', 't2m_min_anom',
 ];
+const VALID_BASELINE: BaselineId[] = ['1971-2000', '1991-2020', 'preindustrial'];
+const DEFAULT_BASELINE: BaselineId = '1971-2000';
+const isAnomalyDataset = (ds: DatasetId) => ds === 'anom' || ds.endsWith('_anom');
 const VALID_MODE = ['single', 'grid'] as const;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -63,6 +67,9 @@ export function readUrlState(): Partial<AppState> & {
 
   const region = p.get('region');
   if (region) out.region = region;
+
+  const base = p.get('base');
+  if (base && (VALID_BASELINE as string[]).includes(base)) out.baseline = base as BaselineId;
 
   const mode = p.get('mode');
   if (mode && (VALID_MODE as readonly string[]).includes(mode)) {
@@ -130,6 +137,7 @@ interface UrlStateInput {
   activeTab: TabId;
   source: SourceId;
   dataset: DatasetId;
+  baseline: BaselineId;
   region: string;
   trendsMode: 'single' | 'grid';
   currentDate?: string;
@@ -143,7 +151,7 @@ interface UrlStateInput {
 /**
  * Serialize the data slice to query params, omitting irrelevant params per
  * tab to keep URLs short:
- *   - region/mode only on Trends tab
+ *   - region/mode/base only on Trends tab
  *   - date/from only on Globe tab (date dropped when parked on the latest)
  */
 function buildParams(s: UrlStateInput): URLSearchParams {
@@ -157,6 +165,7 @@ function buildParams(s: UrlStateInput): URLSearchParams {
     // localStorage could pin them to grid and the region param would no-op.
     p.set('mode', s.trendsMode);
     if (s.region && s.region !== 'global') p.set('region', s.region);
+    if (s.baseline !== DEFAULT_BASELINE && isAnomalyDataset(s.dataset)) p.set('base', s.baseline);
   } else if (s.activeTab === 'globe') {
     if (s.currentDate && s.currentDate !== s.latestDate) p.set('date', s.currentDate);
     if (s.loopStartDate) p.set('from', s.loopStartDate);

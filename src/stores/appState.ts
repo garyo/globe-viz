@@ -60,6 +60,20 @@ export const DATASETS_BY_SOURCE: Record<SourceId, DatasetId[]> = {
 // group. Sources without the axis return [] and the group stays hidden.
 export type StatisticId = 'mean' | 'max' | 'min';
 
+// Anomaly baselines. Every published anomaly is relative to 1971–2000; the
+// others add a per-region monthly offset carried in the time-series JSON (see
+// sea-surface-temp-viz/baselines.py), so for now only the graphs honor them —
+// the globe's textures stay on 1971–2000.
+export type BaselineId = '1971-2000' | '1991-2020' | 'preindustrial';
+export const REFERENCE_BASELINE: BaselineId = '1971-2000';
+export const BASELINES: Record<BaselineId, { short: string; full: string }> = {
+  '1971-2000': { short: '1971–2000', full: '1971–2000 mean' },
+  '1991-2020': { short: '1991–2020', full: '1991–2020 mean' },
+  preindustrial: { short: 'Pre-industrial', full: 'pre-industrial (1850–1900) mean' },
+};
+export const isBaselineId = (v: unknown): v is BaselineId =>
+  typeof v === 'string' && Object.hasOwn(BASELINES, v);
+
 // Display order for the statistic axis: cold → hot (Min, Mean, Max).
 export const STATISTIC_ORDER: StatisticId[] = ['min', 'mean', 'max'];
 
@@ -217,6 +231,9 @@ export interface AppState {
   // Active dataset within the source. Raw ID matching cache-key segment.
   dataset: DatasetId;
 
+  // What anomalies are measured against. Persisted; ignored for raw datasets.
+  baseline: BaselineId;
+
   // Globe appearance
   landColor: string;
 
@@ -298,6 +315,7 @@ const initialState: AppState = {
   sourceDates: { oisst: [], era5: [], gfs: [] },
   datasetDates: { oisst: {}, era5: {}, gfs: {} },
   dataset: 'anom',
+  baseline: REFERENCE_BASELINE,
   landColor: '#aaaaaa',
   autoRotate: false,
   autoRotateSpeed: 0.5,
@@ -355,6 +373,7 @@ function loadSavedState(): Partial<AppState> {
         'themePref',
         'source',
         'dataset',
+        'baseline',
         'landColor',
         'autoRotate',
         'autoRotateSpeed',
@@ -370,6 +389,7 @@ function loadSavedState(): Partial<AppState> {
       const legacyDataset = restored.dataset as unknown;
       if (legacyDataset === 'Temperature') restored.dataset = 'sst';
       else if (legacyDataset === 'Temp Anomaly') restored.dataset = 'anom';
+      if (!isBaselineId(restored.baseline)) delete restored.baseline;
       return restored;
     } catch (e) {
       console.error('Failed to load saved state:', e);
@@ -433,6 +453,7 @@ export function saveState() {
       themePref: appState.themePref,
       source: appState.source,
       dataset: appState.dataset,
+      baseline: appState.baseline,
       landColor: appState.landColor,
       autoRotate: appState.autoRotate,
       autoRotateSpeed: appState.autoRotateSpeed,

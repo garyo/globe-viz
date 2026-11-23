@@ -1,7 +1,7 @@
 import { For, Show, createMemo, createResource } from 'solid-js';
 import { appState, setAppState, saveState, anomalyOf, type DatasetId } from '../stores/appState';
 import { fetchTimeseries, type TimeseriesPayload } from '../lib/data/timeseries';
-import { readThemeColors } from '../lib/timeseriesUtils';
+import { readThemeColors, withBaseline } from '../lib/timeseriesUtils';
 import { MiniChart } from './MiniChart';
 
 const REGION_LABELS: Record<string, string> = {
@@ -87,11 +87,12 @@ export const TrendsGrid = () => {
           <For each={sortedEntries()}>
             {([regionId, payload]) => {
               // Solid's <For> callback runs once per item, so anything that
-              // depends on appState.source/dataset must be wrapped in a memo
-              // to remain reactive across source/dataset toggles.
-              const series = createMemo(
-                () => payload.sources[sourceKey()]?.datasets[datasetKey()]
-              );
+              // depends on appState.source/dataset/baseline must be wrapped in
+              // a memo to remain reactive across those toggles.
+              const series = createMemo(() => {
+                const published = payload.sources[sourceKey()]?.datasets[datasetKey()];
+                return published && withBaseline(published, appState.baseline).series;
+              });
               const preliminaryFrom = createMemo(
                 () => payload.sources[sourceKey()]?.preliminary_from
               );

@@ -1,8 +1,13 @@
+import type { BaselineId } from '../../stores/appState';
+
 const BUCKET_URL = 'https://climate-change-assets.s3.amazonaws.com/sea-surface-temp/';
 
 export interface DatasetSeries {
   dates: string[];   // 'YYYY-MM-DD'
   values: number[];  // parallel to dates
+  // Anomaly datasets only: per alternative baseline, the region's mean offset
+  // for each calendar month (Jan..Dec, °C) to add to these 1971–2000 values.
+  baseline_offsets?: Partial<Record<BaselineId, number[]>>;
 }
 
 export interface TimeseriesPayload {

@@ -13,7 +13,17 @@ import {
 } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import type { EChartsOption } from 'echarts';
-import { appState, setAppState, saveState, type SourceId, type DatasetId } from '../stores/appState';
+import {
+  appState,
+  setAppState,
+  saveState,
+  anomalyOf,
+  BASELINES,
+  REFERENCE_BASELINE,
+  type BaselineId,
+  type SourceId,
+  type DatasetId,
+} from '../stores/appState';
 import { fetchTimeseries, type TimeseriesPayload } from '../lib/data/timeseries';
 import {
   type ThemeColors,
@@ -22,6 +32,7 @@ import {
   groupByYear,
   lerpHex,
   readThemeColors,
+  withBaseline,
 } from '../lib/timeseriesUtils';
 import { TrendsGrid } from './TrendsGrid';
 
@@ -59,18 +70,19 @@ const SOURCE_LABELS: Record<SourceId, string> = {
   gfs: 'NOAA GFS',
 };
 
+// Anomaly titles get "vs. <baseline>" appended by chartTitle().
 const DATASET_TITLE_FRAGMENT: Record<DatasetId, string> = {
   sst: 'Sea Surface Temperature',
-  anom: 'SST Anomaly vs. 1971–2000 mean',
-  sst_anom: 'SST Anomaly vs. 1971–2000 mean',
+  anom: 'SST Anomaly',
+  sst_anom: 'SST Anomaly',
   t2m: '2 m Air Temperature',
-  t2m_anom: '2 m Air Temp Anomaly vs. 1971–2000 mean',
+  t2m_anom: '2 m Air Temp Anomaly',
   t2m_mean: 'Daily Mean 2 m Air Temperature',
   t2m_max: 'Daily Max 2 m Air Temperature',
   t2m_min: 'Daily Min 2 m Air Temperature',
-  t2m_mean_anom: 'Daily Mean 2 m Air Temp Anomaly vs. 1971–2000 mean',
-  t2m_max_anom: 'Daily Max 2 m Air Temp Anomaly vs. 1971–2000 mean',
-  t2m_min_anom: 'Daily Min 2 m Air Temp Anomaly vs. 1971–2000 mean',
+  t2m_mean_anom: 'Daily Mean 2 m Air Temp Anomaly',
+  t2m_max_anom: 'Daily Max 2 m Air Temp Anomaly',
+  t2m_min_anom: 'Daily Min 2 m Air Temp Anomaly',
 };
 
 // Phone-width titles: the full fragment + year range doesn't fit.
@@ -87,6 +99,19 @@ const DATASET_TITLE_SHORT: Record<DatasetId, string> = {
   t2m_max_anom: 'Max Air Temp Anomaly',
   t2m_min_anom: 'Min Air Temp Anomaly',
 };
+
+/** "<dataset> vs. <baseline>", where phone-width titles name the baseline only
+ * when it isn't the reference, to keep them short. */
+function datasetTitle(dataset: DatasetId, baseline: BaselineId, narrow: boolean): string {
+  if (narrow) {
+    const vs = anomalyOf(dataset) && baseline !== REFERENCE_BASELINE
+      ? ` vs. ${BASELINES[baseline].short}`
+      : '';
+    return DATASET_TITLE_SHORT[dataset] + vs;
+  }
+  const vs = anomalyOf(dataset) ? ` vs. ${BASELINES[baseline].full}` : '';
+  return DATASET_TITLE_FRAGMENT[dataset] + vs;
+}
 
 /** Layout regime for the single chart, derived from the container size.
  * `narrow` reworks the chart for phone-portrait widths (short title,
@@ -207,6 +232,7 @@ function buildOption(
   payload: TimeseriesPayload,
   source: SourceId,
   dataset: DatasetId,
+  requestedBaseline: BaselineId,
   c: ThemeColors,
   selectedYear: number | null,
   chart: echarts.ECharts | undefined,
@@ -214,8 +240,8 @@ function buildOption(
 ): EChartsOption {
   const { narrow, short } = layout;
   const compact = narrow || short;
-  const series = payload.sources[source]?.datasets[dataset];
-  if (!series) {
+  const published = payload.sources[source]?.datasets[dataset];
+  if (!published) {
     return {
       title: {
         text: `No ${SOURCE_LABELS[source]} ${dataset} data for this region`,
@@ -225,6 +251,7 @@ function buildOption(
     };
   }
 
+  const { series, baseline } = withBaseline(published, requestedBaseline);
   const preliminaryFrom = payload.sources[source]?.preliminary_from;
   const years = groupByYear(series, preliminaryFrom);
   if (years.length === 0) {
@@ -301,8 +328,8 @@ function buildOption(
   // Every dataset is a temperature in °C; the unit rides in the title now that
   // the (redundant) y-axis name is gone.
   const title = narrow
-    ? `${regionLabel} — ${DATASET_TITLE_SHORT[dataset]} (°C)`
-    : `${regionLabel} — ${DATASET_TITLE_FRAGMENT[dataset]} (°C), ${firstYear}–${lastYear}`;
+    ? `${regionLabel} — ${datasetTitle(dataset, baseline, true)} (°C)`
+    : `${regionLabel} — ${datasetTitle(dataset, baseline, false)} (°C), ${firstYear}–${lastYear}`;
 
   // Match the static graph's labeling: the two oldest years and the five
   // most recent (current year + four prior). Newest first so the current
@@ -1110,13 +1137,14 @@ export const Trends = () => {
     chart = undefined;
   });
 
-  // Re-render when payload, source, dataset, or theme changes. effectiveTheme is the
+  // Re-render when payload, source, dataset, baseline, or theme changes. effectiveTheme is the
   // resolved 'light' | 'dark', so this also fires when the user switches the
   // pref or the OS theme changes (via applyTheme).
   createEffect(() => {
     const data = payload();
     const src = sourceKey();
     const ds = datasetKey();
+    const baseline = appState.baseline;
     // Read effectiveTheme to take a reactive dependency on it; the colors
     // we then read via getComputedStyle reflect whichever data-theme the
     // applyTheme() effect has already written to <html>.
@@ -1131,7 +1159,7 @@ export const Trends = () => {
     // highlight-tracking ref don't point at a line that no longer exists.
     clearHover();
     highlightedYear = null;
-    chart.setOption(buildOption(data, src, ds, colors, sel, chart, layout), true);
+    chart.setOption(buildOption(data, src, ds, baseline, colors, sel, chart, layout), true);
   });
 
   // Chart and grid are both mounted at all times (display-toggled by the

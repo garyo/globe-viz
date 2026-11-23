@@ -2,10 +2,10 @@
 // thumbnail MiniCharts. Pulled out of Trends.tsx so the two renderers stay in
 // sync on date alignment, color selection, and year grouping.
 
-export interface DatasetSeries {
-  dates: string[];   // 'YYYY-MM-DD'
-  values: number[];  // parallel to dates
-}
+import { REFERENCE_BASELINE, type BaselineId } from '../stores/appState';
+import type { DatasetSeries } from './data/timeseries';
+
+export type { DatasetSeries };
 
 export interface YearSeries {
   year: number;
@@ -44,6 +44,59 @@ export const LEAP_DAYS_BEFORE_MONTH = [
 export function leapAlignedDayOfYear(dateStr: string): number {
   const [, m, d] = dateStr.split('-').map(Number);
   return LEAP_DAYS_BEFORE_MONTH[m - 1] + d - 1;
+}
+
+const LEAP_YEAR_DAYS = 366;
+
+// Each month's midpoint on the leap-aligned day-of-year axis: where a monthly
+// value applies exactly.
+const MID_MONTH_DOY = LEAP_DAYS_BEFORE_MONTH.map((start, i) => {
+  const end = LEAP_DAYS_BEFORE_MONTH[i + 1] ?? LEAP_YEAR_DAYS;
+  return start + (end - start - 1) / 2;
+});
+
+/**
+ * Value at a day of year from 12 monthly values, interpolated linearly between
+ * mid-month nodes and wrapping December → January, so a daily curve built from
+ * it has no steps at month boundaries.
+ */
+export function interpolateMonthly(monthly: number[], doy: number): number {
+  const next = MID_MONTH_DOY.findIndex((mid) => mid > doy);
+  const hi = next === -1 ? 0 : next;
+  const lo = (hi + 11) % 12;
+  const wrap = (days: number) => (days + LEAP_YEAR_DAYS) % LEAP_YEAR_DAYS;
+  const t = wrap(doy - MID_MONTH_DOY[lo]) / wrap(MID_MONTH_DOY[hi] - MID_MONTH_DOY[lo]);
+  return monthly[lo] + (monthly[hi] - monthly[lo]) * t;
+}
+
+export interface BaselinedSeries {
+  series: DatasetSeries;
+  // The baseline `series` is actually measured against — the reference when
+  // the payload has no offsets for the one requested (raw datasets, or JSON
+  // exported before baselines existed).
+  baseline: BaselineId;
+}
+
+const rebaselined = new WeakMap<DatasetSeries, Map<BaselineId, DatasetSeries>>();
+
+/** `series` re-measured against `baseline` by adding its monthly offsets. */
+export function withBaseline(series: DatasetSeries, baseline: BaselineId): BaselinedSeries {
+  const offsets = baseline === REFERENCE_BASELINE ? undefined : series.baseline_offsets?.[baseline];
+  if (!offsets) return { series, baseline: REFERENCE_BASELINE };
+
+  let byBaseline = rebaselined.get(series);
+  if (!byBaseline) rebaselined.set(series, (byBaseline = new Map()));
+  let shifted = byBaseline.get(baseline);
+  if (!shifted) {
+    shifted = {
+      dates: series.dates,
+      values: series.values.map(
+        (v, i) => v + interpolateMonthly(offsets, leapAlignedDayOfYear(series.dates[i])),
+      ),
+    };
+    byBaseline.set(baseline, shifted);
+  }
+  return { series: shifted, baseline };
 }
 
 // Day-of-year (leap-aligned) → "Mon D" label.

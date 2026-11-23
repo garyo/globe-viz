@@ -134,6 +134,61 @@ export const About = () => {
           more than cells near the poles, in proportion to the area each grid
           cell actually covers on Earth).
         </p>
+        <h3 style="margin-top: 1.8em">Anomaly baselines</h3>
+        <p>
+          An anomaly is the difference from the long-term average for the same
+          place and time of year. The globe always measures it against
+          1971–2000; on the Trends tab you can pick the reference period:
+        </p>
+        <ul>
+          <li>
+            <strong>1971–2000</strong> — OISST's published anomaly (NOAA's own
+            climatology), and an ERA5 climatology for ERA5 and GFS.
+          </li>
+          <li>
+            <strong>1991–2020</strong> — the current WMO climate normal, from
+            NOAA's OISST climatologies for OISST and ERA5 monthly means for
+            ERA5 and GFS.
+          </li>
+          <li>
+            <strong>Pre-industrial (1850–1900)</strong> — the IPCC reference
+            for warming targets such as 1.5 °C. No satellite or reanalysis
+            record reaches that far back, so each source's 1991–2020 anomaly is
+            shifted by the 1991–2020 vs. 1850–1900 difference from long-record
+            reconstructions: the average of{' '}
+            <a href="https://berkeleyearth.org/data/" target="_blank" rel="noreferrer">Berkeley Earth</a>,{' '}
+            <a href="https://www.metoffice.gov.uk/hadobs/hadcrut5/" target="_blank" rel="noreferrer">HadCRUT5</a>{' '}
+            and{' '}
+            <a href="https://www.ncei.noaa.gov/products/land-based-station/noaa-global-temp" target="_blank" rel="noreferrer">NOAAGlobalTemp</a>{' '}
+            for air temperature (the three Copernicus uses), and of{' '}
+            <a href="https://www.ncei.noaa.gov/products/extended-reconstructed-sst" target="_blank" rel="noreferrer">ERSSTv6</a>{' '}
+            and{' '}
+            <a href="https://psl.noaa.gov/data/gridded/data.cobe2.html" target="_blank" rel="noreferrer">COBE-SST2</a>{' '}
+            for sea-surface temperature.
+          </li>
+        </ul>
+        <p>
+          Each baseline shifts a region's curve by an amount that varies
+          smoothly through the year but is the same every year, so it changes
+          the zero line, not the shape. The pre-industrial shift is an
+          estimate: observations before 1900 were sparse, especially in the
+          Southern Hemisphere and polar oceans, so it's smoothed to scales of
+          roughly 500 km, and the reconstructions disagree by about 0.1 °C
+          globally (early ship measurements are a known source of bias). Over
+          the ocean, the air-temperature shift comes from blended records that
+          use sea-surface temperature there, which the IPCC puts within 10% of
+          true air-temperature warming. Our "Global" region spans 60°S–60°N,
+          so its figures won't exactly match whole-planet numbers such as
+          Copernicus's. The full method, datasets, math, and validation are
+          documented{' '}
+          <a
+            href="https://github.com/garyo/sea-surface-temp-viz/blob/main/doc/baselines.md"
+            target="_blank"
+            rel="noreferrer"
+          >
+            here
+          </a>.
+        </p>
         <p>
           This is an open-source project under the MIT license.<br />
           Data generator:{' '}

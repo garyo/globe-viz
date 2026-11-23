@@ -2,6 +2,7 @@ import { For, Show, createSignal } from 'solid-js';
 import {
   appState,
   setAppState,
+  saveState,
   applyView,
   anomalyOf,
   variableOf,
@@ -12,9 +13,14 @@ import {
   statisticsForSourceVariable,
   statisticsForVariable,
   SOURCE_LABELS,
+  BASELINES,
+  REFERENCE_BASELINE,
+  type BaselineId,
   type SourceId,
   type StatisticId,
 } from '../stores/appState';
+
+const BASELINE_IDS = Object.keys(BASELINES) as BaselineId[];
 
 // Provenance/latency one-liners — shown as a tooltip on each source name (kept
 // out of the row to keep the panel compact).
@@ -89,6 +95,9 @@ export const AvailabilityFab = () => {
       ? `No anomaly yet for ${SOURCE_LABELS[source].short} ${kind === 'sst' ? 'sea temp' : 'daily ' + kind}`
       : `Not available for ${SOURCE_LABELS[source].short}`;
   };
+
+  const shownBaseline = () =>
+    appState.activeTab === 'trends' ? appState.baseline : REFERENCE_BASELINE;
 
   // Anomaly checkbox is offered only when an anomaly exists for the current
   // selection (else it stays on Actual).
@@ -200,19 +209,38 @@ export const AvailabilityFab = () => {
           </tbody>
         </table>
 
-        <label
-          class="cap-anom"
-          classList={{ disabled: !anomAvailable() }}
-          title={anomAvailable() ? 'Difference vs. 1971–2000 climatology' : 'Anomaly not available for this selection'}
-        >
-          <input
-            type="checkbox"
-            checked={curAnom()}
-            disabled={!anomAvailable()}
-            onChange={(e) => applyView(appState.source, curVar(), e.currentTarget.checked, curStat())}
-          />
-          Anomaly
-        </label>
+        <div class="cap-anom">
+          <label
+            classList={{ disabled: !anomAvailable() }}
+            title={anomAvailable() ? `Difference vs. ${BASELINES[shownBaseline()].full}` : 'Anomaly not available for this selection'}
+          >
+            <input
+              type="checkbox"
+              checked={curAnom()}
+              disabled={!anomAvailable()}
+              onChange={(e) => applyView(appState.source, curVar(), e.currentTarget.checked, curStat())}
+            />
+            Anomaly
+          </label>
+          {/* Only the graphs can re-baseline so far; the globe's textures are
+              all relative to 1971–2000. */}
+          <Show when={curAnom() && appState.activeTab === 'trends'}>
+            <select
+              class="cap-baseline"
+              aria-label="Anomaly baseline"
+              title="Reference period the anomaly is measured against"
+              value={appState.baseline}
+              onChange={(e) => {
+                setAppState('baseline', e.currentTarget.value as BaselineId);
+                saveState();
+              }}
+            >
+              <For each={BASELINE_IDS}>
+                {(id) => <option value={id}>vs. {BASELINES[id].short}</option>}
+              </For>
+            </select>
+          </Show>
+        </div>
 
         <Show when={appState.activeTab === 'trends'}>
           <p class="cap-foot" classList={{ 'cap-foot-warn': SOURCE_FOOTERS[appState.source].warn }}>
