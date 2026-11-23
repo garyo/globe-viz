@@ -117,7 +117,7 @@ export function startMovieExport(
     const sourceName = SOURCE_LABELS[source].full;
     const composer = createFrameComposer(ctx, WIDTH, HEIGHT, {
       sourceName,
-      legend: getColormapConfig(dataset, first.metadata),
+      legend: getColormapConfig(dataset, first.metadata, appState.baseline),
       startDate: dates[0],
       endDate: dates[dates.length - 1],
       credit:

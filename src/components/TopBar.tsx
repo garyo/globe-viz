@@ -9,7 +9,7 @@ export const TopBar = () => {
   const colormapConfig = createMemo(() => {
     const slot = appState.assets[appState.dataset];
     if (!slot?.metadata?.cmap?.length) return null;
-    return getColormapConfig(appState.dataset, slot.metadata);
+    return getColormapConfig(appState.dataset, slot.metadata, appState.baseline);
   });
 
   onMount(() => {

@@ -1,6 +1,6 @@
 import type { BaselineId } from '../../stores/appState';
 
-const BUCKET_URL = 'https://climate-change-assets.s3.amazonaws.com/sea-surface-temp/';
+import { BUCKET_URL } from './assets';
 
 export interface DatasetSeries {
   dates: string[];   // 'YYYY-MM-DD'

@@ -49,10 +49,8 @@ export const About = () => {
           <li>Horizontal mouse wheel to rotate the globe left/right</li>
           <li>
             Click any point on the globe to read its coordinates, place name,
-            and every source's value there for the current date. Values are
-            recovered from the map colors, so they're approximate (±0.1 °C
-            typically) and are shown as a bound where the color scale clips.
-            Place names come from bundled Natural Earth outlines, refined for
+            and every source's value there for the current date, exact to
+            0.01 °C for the 0.25° grid cell. Place names come from bundled Natural Earth outlines, refined for
             land points by{' '}
             <a href="https://www.bigdatacloud.com/" target="_blank" rel="noopener noreferrer">
               BigDataCloud
@@ -137,8 +135,8 @@ export const About = () => {
         <h3 style="margin-top: 1.8em">Anomaly baselines</h3>
         <p>
           An anomaly is the difference from the long-term average for the same
-          place and time of year. The globe always measures it against
-          1971–2000; on the Trends tab you can pick the reference period:
+          place and time of year. The Anomaly selector in the Datasets panel
+          picks the reference period, for the globe and the graphs alike:
         </p>
         <ul>
           <li>

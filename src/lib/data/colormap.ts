@@ -1,7 +1,14 @@
 import * as d3 from 'd3';
 import { legendColor } from 'd3-svg-legend';
 import { isMobile } from '../helpers/responsiveness-client';
-import type { Metadata, DatasetId } from '../../stores/appState';
+import {
+  anomalyOf,
+  BASELINES,
+  REFERENCE_BASELINE,
+  type BaselineId,
+  type DatasetId,
+  type Metadata,
+} from '../../stores/appState';
 
 export interface ColormapConfig {
   domains: number[];
@@ -11,18 +18,19 @@ export interface ColormapConfig {
   format: string;
 }
 
+// Legend titles; getColormapConfig appends the baseline and unit.
 const DATASET_TITLES: Record<DatasetId, string> = {
-  sst: 'Temperature, °C',
-  anom: 'Temperature Anomaly, °C',
-  sst_anom: 'SST Anomaly, °C',
-  t2m: '2 m Air Temperature, °C',
-  t2m_anom: '2 m Air Temp Anomaly, °C',
-  t2m_mean: 'Daily Mean 2 m Air Temp, °C',
-  t2m_max: 'Daily Max 2 m Air Temp, °C',
-  t2m_min: 'Daily Min 2 m Air Temp, °C',
-  t2m_mean_anom: 'Daily Mean 2 m Air Temp Anomaly, °C',
-  t2m_max_anom: 'Daily Max 2 m Air Temp Anomaly, °C',
-  t2m_min_anom: 'Daily Min 2 m Air Temp Anomaly, °C',
+  sst: 'Temperature',
+  anom: 'Temperature Anomaly',
+  sst_anom: 'SST Anomaly',
+  t2m: '2 m Air Temperature',
+  t2m_anom: '2 m Air Temp Anomaly',
+  t2m_mean: 'Daily Mean 2 m Air Temp',
+  t2m_max: 'Daily Max 2 m Air Temp',
+  t2m_min: 'Daily Min 2 m Air Temp',
+  t2m_mean_anom: 'Daily Mean 2 m Air Temp Anomaly',
+  t2m_max_anom: 'Daily Max 2 m Air Temp Anomaly',
+  t2m_min_anom: 'Daily Min 2 m Air Temp Anomaly',
 };
 
 // Cells (tick positions) per dataset. Each cmap break point would otherwise
@@ -61,6 +69,7 @@ const DATASET_FORMATS: Record<DatasetId, string> = {
 export function getColormapConfig(
   dataset: DatasetId,
   metadata: Metadata,
+  baseline: BaselineId = REFERENCE_BASELINE,
 ): ColormapConfig | null {
   if (!metadata.cmap?.length) return null;
   const domains = metadata.cmap.map((x) => x[0]);
@@ -69,7 +78,9 @@ export function getColormapConfig(
     domains,
     ranges,
     cells: DATASET_CELLS[dataset] ?? domains,
-    title: DATASET_TITLES[dataset],
+    title: `${DATASET_TITLES[dataset]}${
+      anomalyOf(dataset) && baseline !== REFERENCE_BASELINE ? ` vs. ${BASELINES[baseline].short}` : ''
+    }, °C`,
     format: DATASET_FORMATS[dataset],
   };
 }

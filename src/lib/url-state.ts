@@ -6,7 +6,7 @@
  *   - source     — oisst | era5
  *   - dataset    — raw cache-key dataset id (sst/anom/sst_anom/t2m/t2m_anom)
  *   - region     — global, nino_3_4, ... (only meaningful on Trends)
- *   - base       — anomaly baseline (Trends, anomaly datasets; omitted at 1971–2000)
+ *   - base       — anomaly baseline (anomaly datasets; omitted at 1971–2000)
  *   - mode       — single | grid       (only meaningful on Trends)
  *   - date       — YYYY-MM-DD          (only meaningful on Globe)
  *   - from       — YYYY-MM-DD          playback loop start (Globe only)
@@ -151,7 +151,7 @@ interface UrlStateInput {
 /**
  * Serialize the data slice to query params, omitting irrelevant params per
  * tab to keep URLs short:
- *   - region/mode/base only on Trends tab
+ *   - region/mode only on Trends tab
  *   - date/from only on Globe tab (date dropped when parked on the latest)
  */
 function buildParams(s: UrlStateInput): URLSearchParams {
@@ -159,13 +159,13 @@ function buildParams(s: UrlStateInput): URLSearchParams {
   p.set('tab', s.activeTab);
   p.set('src', s.source);
   p.set('ds', s.dataset);
+  if (s.baseline !== DEFAULT_BASELINE && isAnomalyDataset(s.dataset)) p.set('base', s.baseline);
   if (s.activeTab === 'trends') {
     // mode is always emitted on trends tab so a shared URL deterministically
     // selects single vs grid — if we dropped mode=single the recipient's
     // localStorage could pin them to grid and the region param would no-op.
     p.set('mode', s.trendsMode);
     if (s.region && s.region !== 'global') p.set('region', s.region);
-    if (s.baseline !== DEFAULT_BASELINE && isAnomalyDataset(s.dataset)) p.set('base', s.baseline);
   } else if (s.activeTab === 'globe') {
     if (s.currentDate && s.currentDate !== s.latestDate) p.set('date', s.currentDate);
     if (s.loopStartDate) p.set('from', s.loopStartDate);

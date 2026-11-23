@@ -3,9 +3,12 @@ import { createStore } from 'solid-js/store';
 import { Color, type Texture } from 'three';
 import { readUrlState } from '../lib/url-state';
 import type { CameraOrbit } from '../lib/scene/camera';
+import type { Rg16Encoding } from '../lib/data/rg16';
 
 export interface Metadata {
   cmap: [number, string][];
+  // How the data texture packs values (data textures only).
+  encoding?: Rg16Encoding;
   title: string;
   dataset: string;
   date: string;
@@ -61,9 +64,9 @@ export const DATASETS_BY_SOURCE: Record<SourceId, DatasetId[]> = {
 export type StatisticId = 'mean' | 'max' | 'min';
 
 // Anomaly baselines. Every published anomaly is relative to 1971–2000; the
-// others add a per-region monthly offset carried in the time-series JSON (see
-// sea-surface-temp-viz/baselines.py), so for now only the graphs honor them —
-// the globe's textures stay on 1971–2000.
+// others add an offset the pipeline publishes (sea-surface-temp-viz
+// doc/baselines.md): per region in the time-series JSON for the graphs, and
+// per pixel in coefficient atlases for the globe.
 export type BaselineId = '1971-2000' | '1991-2020' | 'preindustrial';
 export const REFERENCE_BASELINE: BaselineId = '1971-2000';
 export const BASELINES: Record<BaselineId, { short: string; full: string }> = {

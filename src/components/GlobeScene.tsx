@@ -8,6 +8,9 @@ import {
   setSelectableIndex,
   nextSelectableIndex,
   getCurrentDate,
+  showNotice,
+  BASELINES,
+  REFERENCE_BASELINE,
   type PickedPoint,
 } from '../stores/appState';
 import { toggleFullScreen } from '../lib/helpers/fullscreen';
@@ -30,7 +33,8 @@ import {
   applyCameraOrbit,
   setCameraOrbitProvider,
 } from '../lib/scene/camera';
-import { createGlobe, updateGlobeTexture } from '../lib/scene/globe';
+import { createGlobe, setGlobeBaseline, updateGlobeTexture } from '../lib/scene/globe';
+import { baselineAtlasFor } from '../lib/data/baselineAtlas';
 import { loadCoastlines, type CoastlineOverlay } from '../lib/scene/coastlines';
 import { setMovieExportProvider } from '../lib/export/exportContext';
 import { fetchDatasetAssets } from '../lib/data/assets';
@@ -70,6 +74,10 @@ export const GlobeScene = () => {
   // Point readout (click-to-inspect). Kept as local signals rather than store
   // fields because only this component and its popup ever look at them.
   const [readoutRows, setReadoutRows] = createSignal<ReadoutRow[]>([]);
+  // Flips once the globe mesh exists, so effects that configure it run then
+  // even if their inputs were already settled.
+  const [globeReady, setGlobeReady] = createSignal(false);
+  let baselineRequestId = 0;
   const [placeName, setPlaceName] = createSignal<string | null>(null);
 
   /**
@@ -128,6 +136,7 @@ export const GlobeScene = () => {
       const result = await createGlobe(textureLoader, initialTexture);
       globe = result.mesh;
       scene.add(globe);
+      setGlobeReady(true);
 
       // Create controls (needs globe position for target)
       controls = createControls(camera, canvasRef, globe.position);
@@ -205,6 +214,27 @@ export const GlobeScene = () => {
     const dataTexture = slot?.texture;
     if (!globe) return;
     if (dataTexture) updateGlobeTexture(globe, dataTexture);
+  });
+
+  // Re-baseline anomalies per pixel. The offset atlas is fetched once per field
+  // and baseline; until it arrives the globe keeps its previous offset. If it
+  // can't load, fall back to the reference baseline openly rather than drawing
+  // unshifted values under the selected baseline's legend.
+  createEffect(() => {
+    const { baseline, source, dataset } = appState;
+    if (!globeReady()) return;
+    const requestId = ++baselineRequestId;
+    baselineAtlasFor(baseline, source, dataset, textureLoader).then(
+      (atlas) => {
+        if (requestId === baselineRequestId && globe) setGlobeBaseline(globe, atlas);
+      },
+      (err) => {
+        if (requestId !== baselineRequestId) return;
+        console.warn('Failed to load baseline offsets:', err);
+        showNotice(`${BASELINES[baseline].short} offsets unavailable — showing 1971–2000`);
+        setAppState('baseline', REFERENCE_BASELINE);
+      },
+    );
   });
 
   // React to auto-rotate changes
@@ -379,6 +409,7 @@ export const GlobeScene = () => {
     const point = pickedPointSnapshot();
     const date = appState.availableDates[appState.currentDateIndex];
     const isAnimating = appState.isAnimating;
+    const baseline = appState.baseline;
 
     if (readoutTimeout) {
       clearTimeout(readoutTimeout);
@@ -399,6 +430,7 @@ export const GlobeScene = () => {
     const run = () => {
       readoutTimeout = undefined;
       void readPointValues(point, date, textureCache, textureLoader, {
+        baseline,
         // Never fetch mid-playback: at up to 11 datasets per frame that would
         // swamp the network and evict the animation's own textures. Scrubbing
         // by hand is debounced instead, so it costs one batch once you settle.

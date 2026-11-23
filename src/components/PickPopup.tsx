@@ -2,7 +2,7 @@ import { For, Show } from 'solid-js';
 import { formatLatLon } from '../lib/scene/geo';
 import { formatDate } from '../lib/helpers/dates';
 import type { ReadoutCell, ReadoutRow } from '../lib/data/pointReadout';
-import type { PickedPoint } from '../stores/appState';
+import { appState, BASELINES, REFERENCE_BASELINE, type PickedPoint } from '../stores/appState';
 
 interface PickPopupProps {
   point: PickedPoint;
@@ -33,10 +33,7 @@ function formatCell(cell: ReadoutCell | null, signed: boolean): string {
     case 'unavailable': return '·';
     case 'value': {
       const value = cell.value!;
-      const text = signed && value > 0 ? `+${value.toFixed(1)}` : value.toFixed(1);
-      if (cell.clip === 'low') return `≤${text}`;
-      if (cell.clip === 'high') return `≥${text}`;
-      return text;
+      return signed && value > 0 ? `+${value.toFixed(2)}` : value.toFixed(2);
     }
   }
 }
@@ -48,16 +45,13 @@ function cellTitle(cell: ReadoutCell | null): string | undefined {
     case 'unpublished': return 'This source has no map for this date';
     case 'unavailable': return 'Not loaded — pause playback to fetch it';
     case 'pending': return 'Loading…';
-    case 'value':
-      return cell.clip
-        ? 'Off the end of the color scale — the true value is beyond this bound'
-        : undefined;
+    case 'value': return undefined;
   }
 }
 
 const Cell = (props: { cell: ReadoutCell | null; signed?: boolean }) => (
   <td
-    classList={{ muted: props.cell?.state !== 'value' || !!props.cell?.clip }}
+    classList={{ muted: props.cell?.state !== 'value' }}
     title={cellTitle(props.cell)}
   >
     <span
@@ -97,7 +91,12 @@ export const PickPopup = (props: PickPopupProps) => (
           <tr>
             <th />
             <th>Actual</th>
-            <th>Anomaly</th>
+            <th title={`Difference from the ${BASELINES[appState.baseline].full}`}>
+              Anomaly
+              <Show when={appState.baseline !== REFERENCE_BASELINE}>
+                <span class="pick-popup-baseline"> vs. {BASELINES[appState.baseline].short}</span>
+              </Show>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -122,8 +121,7 @@ export const PickPopup = (props: PickPopupProps) => (
     </p>
 
     <p class="pick-popup-footnote">
-      All values °C, read back from the map colors — roughly ±0.1 °C, less
-      accurate near coastlines.
+      All values °C, for the 0.25° grid cell containing the point.
       <br />
       <b>—</b> no value here (land or sea ice)
       <br />

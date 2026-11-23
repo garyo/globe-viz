@@ -1,7 +1,9 @@
 import type { Metadata, SourceId, DatasetId } from '../../stores/appState';
-import { TextureLoader, LinearSRGBColorSpace, type Texture } from 'three';
+import type { TextureLoader, Texture } from 'three';
+import { colormapTexture } from './colormapTexture';
+import { loadRg16Texture } from './rg16';
 
-const BUCKET_URL = 'https://climate-change-assets.s3.amazonaws.com/sea-surface-temp/';
+export const BUCKET_URL = 'https://climate-change-assets.s3.amazonaws.com/sea-surface-temp/';
 
 // Single dataset assets - only fetch what we need
 export interface DatasetAssets {
@@ -12,6 +14,9 @@ export interface DatasetAssets {
 export interface DatasetDateMeta {
   dates: string[];   // Dated textures that exist for this source × dataset
   latest: string | null;
+  // Dates with a 16-bit data texture — the only kind this globe draws. Listed
+  // separately because older site versions still read `dates`.
+  data_dates?: string[];
 }
 
 export interface SourceDateMeta {
@@ -34,76 +39,88 @@ export interface DateIndex {
 }
 
 /**
- * Fetch the index of available dates from S3
+ * Fetch the index of available dates from S3, restricted to data textures.
  */
 export async function fetchDateIndex(): Promise<DateIndex> {
   const response = await fetch(BUCKET_URL + 'index.json');
   if (!response.ok) {
     throw new Error(`Failed to fetch date index: ${response.statusText}`);
   }
-  return await response.json();
+  return dataTextureIndex(await response.json());
 }
 
+const latestOf = (dates: string[]) => dates[dates.length - 1] ?? null;
+
 /**
- * Build the equirect texture URL stem (without `.webp` / `-metadata.json`) for
- * a given (source, dataset, date). OISST keeps its legacy unprefixed naming
- * (`<date>-sst-temp-equirect`, `<date>-sst-temp-anomaly-equirect`) so old
- * client deployments and bookmarks keep working; newer sources use a uniform
- * `<date>-<source>-<dataset>-equirect` scheme.
+ * Rewrite an index so every date list counts only data textures: each
+ * dataset's `dates` become its `data_dates`, and the per-source and global
+ * unions are rebuilt from those. Everything downstream can then keep reading
+ * `dates` without knowing that S3 also holds color-mapped images for older
+ * clients. Datasets without data textures drop out.
  */
-function equirectStem(source: SourceId, dataset: DatasetId, date: string | undefined): string {
-  const datePrefix = date ? `${date}-` : '';
-  if (source === 'oisst') {
-    const suffix = dataset === 'sst' ? 'sst-temp' : 'sst-temp-anomaly';
-    return `${datePrefix}${suffix}-equirect`;
+function dataTextureIndex(index: DateIndex): DateIndex {
+  const sources: Record<string, SourceDateMeta> = {};
+  const all = new Set<string>();
+  for (const [src, meta] of Object.entries(index.sources ?? {})) {
+    const datasets: Record<string, DatasetDateMeta> = {};
+    const union = new Set<string>();
+    for (const [ds, info] of Object.entries(meta.datasets ?? {})) {
+      if (!info.data_dates?.length) continue;
+      datasets[ds] = { dates: info.data_dates, latest: latestOf(info.data_dates) };
+      info.data_dates.forEach((d) => union.add(d));
+    }
+    if (union.size === 0) continue;
+    const dates = [...union].sort();
+    sources[src] = { dates, latest: latestOf(dates), datasets };
+    dates.forEach((d) => all.add(d));
   }
-  // Upstream DatasetSpec.equirect_basename uses hyphens everywhere
-  // (era5-sst, era5-sst-anom, era5-t2m, era5-t2m-anom); dataset IDs use
-  // underscores for the anomaly variants because they're also cache-key
-  // segments. Map underscore → hyphen so the filename matches what
-  // pipeline.py wrote to S3.
-  const dsToken = dataset.replace(/_/g, '-');
-  return `${datePrefix}${source}-${dsToken}-equirect`;
+  const dates = [...all].sort();
+  return {
+    ...index,
+    dates,
+    latest: sources.oisst?.latest ?? latestOf(dates) ?? index.latest,
+    sources,
+  };
 }
 
 /**
- * Fetch assets for a specific source × dataset × date.
- * @param date - Optional date string in YYYY-MM-DD format. If not provided, fetches latest (non-dated) files.
- * @param source - Which source to fetch ('oisst', 'era5', ...).
- * @param dataset - Which dataset to fetch ('sst', 'anom', 't2m').
- * @param textureLoader - Three.js TextureLoader instance for loading textures.
+ * URL stem (without `.webp` / `-metadata.json`) of a data texture:
+ * `<date>-<source>-<dataset>-data`, with the dataset id's underscores as
+ * hyphens, as sea-surface-temp-viz's DataSource.data_texture_filename writes.
+ */
+function dataTextureStem(source: SourceId, dataset: DatasetId, date: string): string {
+  return `${date}-${source}-${dataset.replace(/_/g, '-')}-data`;
+}
+
+/**
+ * Fetch the data texture and metadata for a source × dataset × date.
+ *
+ * The texture carries everything the globe shader needs to draw it in
+ * `userData`: its date, its value encoding, and its colormap lookup texture.
  */
 export async function fetchDatasetAssets(
-  date: string | undefined,
+  date: string,
   source: SourceId,
   dataset: DatasetId,
   textureLoader: TextureLoader
 ): Promise<DatasetAssets> {
-  const stem = equirectStem(source, dataset, date);
+  const stem = dataTextureStem(source, dataset, date);
   const textureUrl = BUCKET_URL + `${stem}.webp`;
   const metadataUrl = BUCKET_URL + `${stem}-metadata.json`;
 
-  const [textureBlob, metadata] = await Promise.all([
-    fetch(textureUrl).then(async (res) => {
-      if (!res.ok) throw new Error(`Failed to fetch ${source}/${dataset} texture: ${res.statusText}`);
-      return res.blob();
-    }),
+  const [texture, metadata] = await Promise.all([
+    loadRg16Texture(textureUrl, textureLoader),
     fetch(metadataUrl).then(async (res) => {
       if (!res.ok) throw new Error(`Failed to fetch ${source}/${dataset} metadata: ${res.statusText}`);
-      return res.json();
+      return res.json() as Promise<Metadata>;
     }),
   ]);
 
-  // Create Three.js texture from blob
-  const textureUrl_obj = URL.createObjectURL(textureBlob);
-  const texture = await textureLoader.loadAsync(textureUrl_obj);
-
-  // Configure texture
-  texture.colorSpace = LinearSRGBColorSpace;
-  texture.userData.objectUrl = textureUrl_obj;
   texture.userData.date = date;
   texture.userData.source = source;
   texture.userData.dataset = dataset;
+  texture.userData.encoding = metadata.encoding;
+  texture.userData.colormap = colormapTexture(metadata.cmap);
 
   return {
     texture,

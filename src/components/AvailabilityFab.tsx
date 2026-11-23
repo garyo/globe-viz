@@ -14,7 +14,6 @@ import {
   statisticsForVariable,
   SOURCE_LABELS,
   BASELINES,
-  REFERENCE_BASELINE,
   type BaselineId,
   type SourceId,
   type StatisticId,
@@ -95,9 +94,6 @@ export const AvailabilityFab = () => {
       ? `No anomaly yet for ${SOURCE_LABELS[source].short} ${kind === 'sst' ? 'sea temp' : 'daily ' + kind}`
       : `Not available for ${SOURCE_LABELS[source].short}`;
   };
-
-  const shownBaseline = () =>
-    appState.activeTab === 'trends' ? appState.baseline : REFERENCE_BASELINE;
 
   // Anomaly checkbox is offered only when an anomaly exists for the current
   // selection (else it stays on Actual).
@@ -212,7 +208,7 @@ export const AvailabilityFab = () => {
         <div class="cap-anom">
           <label
             classList={{ disabled: !anomAvailable() }}
-            title={anomAvailable() ? `Difference vs. ${BASELINES[shownBaseline()].full}` : 'Anomaly not available for this selection'}
+            title={anomAvailable() ? `Difference vs. ${BASELINES[appState.baseline].full}` : 'Anomaly not available for this selection'}
           >
             <input
               type="checkbox"
@@ -222,9 +218,7 @@ export const AvailabilityFab = () => {
             />
             Anomaly
           </label>
-          {/* Only the graphs can re-baseline so far; the globe's textures are
-              all relative to 1971–2000. */}
-          <Show when={curAnom() && appState.activeTab === 'trends'}>
+          <Show when={curAnom()}>
             <select
               class="cap-baseline"
               aria-label="Anomaly baseline"

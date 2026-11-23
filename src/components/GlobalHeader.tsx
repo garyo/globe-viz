@@ -7,6 +7,8 @@ import {
   anomalyOf,
   effectiveStatistic,
   SOURCE_LABELS,
+  BASELINES,
+  REFERENCE_BASELINE,
   type TabId,
 } from '../stores/appState';
 import { ThemeSwitcher } from './controls/ThemeSwitcher';
@@ -36,7 +38,10 @@ export const GlobalHeader = () => {
     const parts = [src, v === 't2m' ? 'Air Temp' : 'Sea Temp'];
     const stat = effectiveStatistic(appState.source, appState.dataset);
     if (stat) parts.push(cap(stat));
-    if (anomalyOf(appState.dataset)) parts.push('Δ');
+    if (anomalyOf(appState.dataset)) {
+      const { baseline } = appState;
+      parts.push(baseline === REFERENCE_BASELINE ? 'Δ' : `Δ vs. ${BASELINES[baseline].short}`);
+    }
     return parts.join(' · ');
   };
 

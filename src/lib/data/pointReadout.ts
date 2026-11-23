@@ -8,14 +8,18 @@ import {
   variableOf,
   DATASETS_BY_SOURCE,
   SOURCE_LABELS,
+  type BaselineId,
   type DatasetId,
   type PickedPoint,
   type SourceId,
   type Variable,
 } from '../../stores/appState';
+import type { BaselineAtlas } from '../scene/globe';
 import { latLonToPixel } from '../scene/geo';
 import { fetchDatasetAssets, type DatasetAssets } from './assets';
-import { inverseLutFor, rgbToValue } from './inverseColormap';
+import { baselineAtlasFor, baselineOffsetAt } from './baselineAtlas';
+import { colormapColor } from './colormapTexture';
+import { rg16Value } from './rg16';
 import { samplePixel, textureSize } from './sampleTexture';
 import type { TextureCache } from './textureCache';
 
@@ -30,8 +34,6 @@ import type { TextureCache } from './textureCache';
 export interface ReadoutCell {
   state: 'pending' | 'value' | 'masked' | 'unpublished' | 'unavailable';
   value?: number;
-  /** Set when the pixel sits at an end of the colormap and the value is a bound. */
-  clip?: 'low' | 'high';
   /** This dataset's colormap color for the value — ties the number to the map. */
   color?: string;
 }
@@ -111,31 +113,37 @@ function planRows(date: string): { rows: ReadoutRow[]; jobs: SampleJob[] } {
   return { rows, jobs };
 }
 
-/** Read one dataset's value at a point, given assets already in hand. */
+/**
+ * Read one dataset's value at the grid cell containing a point, plus the
+ * baseline's offset there when re-baselining an anomaly.
+ */
 function readCell(
   assets: DatasetAssets,
-  source: SourceId,
-  dataset: DatasetId,
   point: PickedPoint,
+  date: string,
+  atlas: BaselineAtlas | null,
 ): ReadoutCell {
   const size = textureSize(assets.texture);
-  const lut = inverseLutFor(source, dataset, assets.metadata);
-  if (!size || !lut) return { state: 'unavailable' };
+  const encoding = assets.metadata.encoding;
+  if (!size || !encoding) return { state: 'unavailable' };
 
   const { px, py } = latLonToPixel(point, size.width, size.height);
   const pixel = samplePixel(assets.texture, px, py);
   if (!pixel) return { state: 'unavailable' };
 
-  // Masked cells (land, sea ice, out-of-range latitude) are written as fully
-  // transparent by matplotlib's "bad" color. Datasets defined everywhere —
-  // air temp — ship as RGB with no alpha channel, so this never fires for them.
-  if (pixel.a === 0) return { state: 'masked' };
-
-  const { value, clip, color } = rgbToValue(lut, pixel.r, pixel.g, pixel.b);
-  return { state: 'value', value, clip: clip ?? undefined, color };
+  let value = rg16Value(encoding, pixel.r, pixel.g);
+  if (value === null) return { state: 'masked' }; // land, sea ice
+  if (atlas) {
+    const offset = baselineOffsetAt(atlas, px, py, date);
+    if (offset === null) return { state: 'unavailable' };
+    value += offset;
+  }
+  return { state: 'value', value, color: colormapColor(assets.metadata.cmap, value) };
 }
 
 export interface ReadoutOptions {
+  /** What anomalies are measured against. */
+  baseline: BaselineId;
   /** Fetch textures that aren't cached yet. False while playing, where a fetch
    *  per frame would swamp the network and evict the animation's own textures. */
   allowFetch: boolean;
@@ -148,9 +156,9 @@ export interface ReadoutOptions {
 /**
  * Sample every available dataset at a point, reporting progressively.
  *
- * Values come from inverting the colormap that produced the texture, because no
- * per-cell data product is published — see inverseColormap.ts. Cached textures
- * resolve in the first synchronous pass; the rest stream in.
+ * Values are decoded exactly from the data textures (0.01 °C), anomalies
+ * measured against the selected baseline. Cached textures resolve in the
+ * first pass; the rest stream in.
  */
 export async function readPointValues(
   point: PickedPoint,
@@ -163,10 +171,27 @@ export async function readPointValues(
   options.onUpdate(rows);
   if (jobs.length === 0) return;
 
+  // Offset atlases are fetched once per field and shared, so this is cheap
+  // after the first pick under a given baseline. `undefined` marks one that
+  // failed to load: its cells read as unavailable rather than unshifted.
+  const atlases = await Promise.all(
+    jobs.map((job) =>
+      baselineAtlasFor(options.baseline, job.source, job.dataset, textureLoader)
+        .catch(() => undefined),
+    ),
+  );
+  if (!options.isCurrent()) return;
+  const cellFor = (job: SampleJob, assets: DatasetAssets): ReadoutCell => {
+    const atlas = atlases[jobs.indexOf(job)];
+    return atlas === undefined
+      ? { state: 'unavailable' }
+      : readCell(assets, point, date, atlas);
+  };
+
   const pending: SampleJob[] = [];
   for (const job of jobs) {
     const cached = textureCache.get(date, job.source, job.dataset);
-    if (cached) rows[job.row][job.slot] = readCell(cached, job.source, job.dataset, point);
+    if (cached) rows[job.row][job.slot] = cellFor(job, cached);
     else if (options.allowFetch) pending.push(job);
     else rows[job.row][job.slot] = { state: 'unavailable' };
   }
@@ -181,7 +206,7 @@ export async function readPointValues(
         // these textures may never reach the GPU.
         textureCache.set(date, job.source, job.dataset, assets);
         if (!options.isCurrent()) return;
-        rows[job.row][job.slot] = readCell(assets, job.source, job.dataset, point);
+        rows[job.row][job.slot] = cellFor(job, assets);
       } catch {
         rows[job.row][job.slot] = { state: 'unavailable' };
       }
