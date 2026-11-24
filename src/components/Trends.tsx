@@ -28,6 +28,7 @@ import { fetchTimeseries, type TimeseriesPayload } from '../lib/data/timeseries'
 import {
   type ThemeColors,
   type YearSeries,
+  byRegionOrder,
   dayLabel,
   groupByYear,
   lerpHex,
@@ -1233,7 +1234,7 @@ export const Trends = () => {
               value={appState.region}
               onChange={onRegionChange}
             >
-              <For each={appState.availableRegions}>
+              <For each={[...appState.availableRegions].sort(byRegionOrder)}>
                 {(r) => (
                   <option value={r} disabled={!regionHasDataset(r, appState.dataset)}>
                     {REGION_LABELS[r] ?? r}

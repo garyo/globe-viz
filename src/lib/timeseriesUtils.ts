@@ -107,6 +107,22 @@ export function withBaseline(series: DatasetSeries, baseline: BaselineId): Basel
 // masked sea ice near the poles, so "world" exists for air temp only.
 const REGION_VARIABLES: Partial<Record<string, Variable>> = { world: 't2m' };
 
+// Display order for regions: the global means first (most familiar), then the
+// other bbox regions, then ocean basins. Unrecognized IDs go last, by name.
+const REGION_ORDER = [
+  'world', 'global', 'trop', 'n_hemi', 's_hemi', 'nino_3_4',
+  'pacific', 'atlantic', 'indian', 'arctic', 'antarctic',
+];
+
+/** Comparator putting region IDs in display order. */
+export function byRegionOrder(a: string, b: string): number {
+  const rank = (id: string) => {
+    const i = REGION_ORDER.indexOf(id);
+    return i === -1 ? REGION_ORDER.length : i;
+  };
+  return rank(a) - rank(b) || a.localeCompare(b);
+}
+
 /** Whether the pipeline publishes `dataset` for `region`. */
 export function regionHasDataset(region: string, dataset: DatasetId): boolean {
   const only = REGION_VARIABLES[region];

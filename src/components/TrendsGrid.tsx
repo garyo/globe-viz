@@ -1,7 +1,7 @@
 import { For, Show, createMemo, createResource } from 'solid-js';
 import { appState, setAppState, saveState, anomalyOf, type DatasetId } from '../stores/appState';
 import { fetchTimeseries, type TimeseriesPayload } from '../lib/data/timeseries';
-import { readThemeColors, regionHasDataset, withBaseline } from '../lib/timeseriesUtils';
+import { byRegionOrder, readThemeColors, regionHasDataset, withBaseline } from '../lib/timeseriesUtils';
 import { MiniChart } from './MiniChart';
 
 const REGION_LABELS: Record<string, string> = {
@@ -16,17 +16,6 @@ const REGION_LABELS: Record<string, string> = {
   indian: 'Indian',
   arctic: 'Arctic',
   antarctic: 'Southern Ocean',
-};
-
-// Display order in the grid: the global means first (most familiar), then the
-// other bbox regions, then ocean basins. Anything unrecognized goes last.
-const ORDER = [
-  'world', 'global', 'trop', 'n_hemi', 's_hemi', 'nino_3_4',
-  'pacific', 'atlantic', 'indian', 'arctic', 'antarctic',
-];
-const orderRank = (id: string) => {
-  const i = ORDER.indexOf(id);
-  return i === -1 ? ORDER.length + id.charCodeAt(0) : i;
 };
 
 const formatValue = (v: number, ds: DatasetId): string =>
@@ -64,7 +53,7 @@ export const TrendsGrid = () => {
     if (!arr) return [];
     return arr
       .filter(([regionId]) => regionHasDataset(regionId, datasetKey()))
-      .sort(([a], [b]) => orderRank(a) - orderRank(b));
+      .sort(([a], [b]) => byRegionOrder(a, b));
   };
 
   const onCellClick = (regionId: string) => {
