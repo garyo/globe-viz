@@ -2,7 +2,13 @@
 // thumbnail MiniCharts. Pulled out of Trends.tsx so the two renderers stay in
 // sync on date alignment, color selection, and year grouping.
 
-import { REFERENCE_BASELINE, type BaselineId } from '../stores/appState';
+import {
+  REFERENCE_BASELINE,
+  variableOf,
+  type BaselineId,
+  type DatasetId,
+  type Variable,
+} from '../stores/appState';
 import type { DatasetSeries } from './data/timeseries';
 
 export type { DatasetSeries };
@@ -94,6 +100,17 @@ export function withBaseline(series: DatasetSeries, baseline: BaselineId): Basel
     byBaseline.set(baseline, shifted);
   }
   return { series: shifted, baseline };
+}
+
+// Regions that carry only one variable; mirrors `variables` in
+// sea-surface-temp-viz/regions.py. A whole-globe SST mean would be mostly
+// masked sea ice near the poles, so "world" exists for air temp only.
+const REGION_VARIABLES: Partial<Record<string, Variable>> = { world: 't2m' };
+
+/** Whether the pipeline publishes `dataset` for `region`. */
+export function regionHasDataset(region: string, dataset: DatasetId): boolean {
+  const only = REGION_VARIABLES[region];
+  return !only || only === variableOf(dataset);
 }
 
 // Day-of-year (leap-aligned) → "Mon D" label.

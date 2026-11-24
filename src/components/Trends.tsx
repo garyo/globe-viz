@@ -32,6 +32,7 @@ import {
   groupByYear,
   lerpHex,
   readThemeColors,
+  regionHasDataset,
   tempLabel,
   withBaseline,
 } from '../lib/timeseriesUtils';
@@ -41,6 +42,7 @@ import { TrendsGrid } from './TrendsGrid';
 // sea-surface-temp-viz/regions.py. Unknown IDs fall back to the ID itself.
 const REGION_LABELS: Record<string, string> = {
   global: 'Global (60°S–60°N)',
+  world: 'Whole globe (90°S–90°N)',
   trop: 'Tropics (23.5°S–23.5°N)',
   n_hemi: 'Northern Hemisphere',
   s_hemi: 'Southern Hemisphere',
@@ -1182,6 +1184,15 @@ export const Trends = () => {
     document.body.dataset.trendsMode = appState.trendsMode;
   });
 
+  // "world" is air temp only: switching to SST while it's selected falls
+  // back to the 60°S–60°N global series instead of an empty chart.
+  createEffect(() => {
+    if (!regionHasDataset(appState.region, appState.dataset)) {
+      setAppState('region', 'global');
+      saveState();
+    }
+  });
+
   const onRegionChange = (e: Event & { currentTarget: HTMLSelectElement }) => {
     setAppState('region', e.currentTarget.value);
     saveState();
@@ -1223,7 +1234,12 @@ export const Trends = () => {
               onChange={onRegionChange}
             >
               <For each={appState.availableRegions}>
-                {(r) => <option value={r}>{REGION_LABELS[r] ?? r}</option>}
+                {(r) => (
+                  <option value={r} disabled={!regionHasDataset(r, appState.dataset)}>
+                    {REGION_LABELS[r] ?? r}
+                    {regionHasDataset(r, appState.dataset) ? '' : ' (air temp only)'}
+                  </option>
+                )}
               </For>
             </select>
           </Show>

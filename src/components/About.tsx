@@ -113,6 +113,10 @@ export const About = () => {
           The Trends tab lets you explore time series for ten regions: a global
           ocean average (60°S–60°N), the tropics (±23.5°), each hemisphere, the
           Niño 3.4 box used in ENSO indices, and the five major ocean basins.
+          Air temperature also has a whole-globe average (pole to pole, from
+          2024 on), comparable to the global figures Copernicus publishes; sea
+          surface temperature has none, since the polar oceans are mostly sea
+          ice.
         </p>
         <img
           src="/regions-map.png"
