@@ -107,6 +107,12 @@ export function dayLabel(doy: number): string {
   });
 }
 
+// A temperature reading as the Trends chart labels it: three decimals, since
+// records and day-to-day changes often differ only in the third.
+export function tempLabel(value: number): string {
+  return `${value.toFixed(3)}°C`;
+}
+
 // Linear interpolation between two color stops in CSS hex. Sufficient for the
 // year-gradient; not perceptually uniform but visually acceptable for the
 // 44-year fade.

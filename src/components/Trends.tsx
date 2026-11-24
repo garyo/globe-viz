@@ -32,6 +32,7 @@ import {
   groupByYear,
   lerpHex,
   readThemeColors,
+  tempLabel,
   withBaseline,
 } from '../lib/timeseriesUtils';
 import { TrendsGrid } from './TrendsGrid';
@@ -391,7 +392,7 @@ function buildOption(
       markData.push({
         coord: [record.doy, record.value],
         label: {
-          formatter: `latest & record: ${dayLabel(record.doy)}, ${record.year}\n${record.value.toFixed(2)}°C${prelimNote}`,
+          formatter: `latest & record: ${dayLabel(record.doy)}, ${record.year}\n${tempLabel(record.value)}${prelimNote}`,
           position: record.doy < 183 ? 'right' : 'left',
         },
       });
@@ -400,7 +401,7 @@ function buildOption(
         markData.push({
           coord: [record.doy, record.value],
           label: {
-            formatter: `record: ${dayLabel(record.doy)}, ${record.year}\n${record.value.toFixed(2)}°C`,
+            formatter: `record: ${dayLabel(record.doy)}, ${record.year}\n${tempLabel(record.value)}`,
             // The record is the all-time max, so its dot always sits at the very
             // top of the plot — a label above it collides with the header band or
             // clips off the top edge. Tuck it beside the dot: away from the latest
@@ -415,7 +416,7 @@ function buildOption(
         markData.push({
           coord: [doy, val],
           label: {
-            formatter: `${dayLabel(doy)}, ${lastYear}\n${val.toFixed(2)}°C${prelimNote}`,
+            formatter: `${dayLabel(doy)}, ${lastYear}\n${tempLabel(val)}${prelimNote}`,
             // Opposite the record when they collide; otherwise inside the plot
             // (late-year points sit near the right edge, so flip left on narrow).
             position: recordNearLatest ? (recordIsLeft ? 'right' : 'left') : narrow ? 'left' : 'right',
@@ -1247,7 +1248,7 @@ export const Trends = () => {
             <div class="trends-hover-readout">
               <span class="trends-hover-year" style={{ color: h().color }}>{h().year}</span>
               <span class="trends-hover-date">{dayLabel(h().doy)}</span>
-              <span class="trends-hover-value">{h().value.toFixed(2)}°C</span>
+              <span class="trends-hover-value">{tempLabel(h().value)}</span>
             </div>
           )}
         </Show>
