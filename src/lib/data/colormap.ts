@@ -34,7 +34,7 @@ const DATASET_TITLES: Record<DatasetId, string> = {
 };
 
 // Cells (tick positions) per dataset. Each cmap break point would otherwise
-// become its own ~30px swatch, and the #colormap SVG caps at 380px — so
+// become its own ~30px swatch, and the #colormap SVG caps at 520px — so
 // datasets with many break points need a curated, narrower tick set. SST gets
 // denser ticks around the upper ENSO-relevant range; t2m_anom's 15-stop cmap
 // is sampled down to the populated ±4 °C band plus a couple of tail markers.
@@ -122,4 +122,14 @@ export function renderColormap(
     .scale(linear);
 
   svg.select('.legendLinear').call(legendLinear as any);
+  fitTitle(svg.select<SVGTextElement>('.legendTitle').node(), svgElement.clientWidth - translateX);
+}
+
+/** Shrink the legend title's font so it fits in `room` px (long baseline titles on phones). */
+function fitTitle(title: SVGTextElement | null, room: number) {
+  if (!title) return;
+  const length = title.getComputedTextLength();
+  if (length <= room) return;
+  const fontSize = parseFloat(getComputedStyle(title).fontSize);
+  title.style.fontSize = `${Math.floor((fontSize * room) / length)}px`;
 }
